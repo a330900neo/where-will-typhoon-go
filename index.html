@@ -88,96 +88,108 @@
 
     // 取得 HKO 颱風列表 (同上一個版本)
 // 💡 取得 HKO 颱風列表 (強化容錯與備援代理版本)
+// 💡 1. 建立強大的 XML 抓取器，自帶多重 CORS 代理備援機制
+    async function fetchXML(targetUrl) {
+      const proxies = [
+        url => 'https://corsproxy.io/?' + encodeURIComponent(url),
+        url => 'https://api.allorigins.win/raw?url=' + encodeURIComponent(url)
+      ];
+
+      let lastError = null;
+      for (let proxyFn of proxies) {
+        try {
+          const res = await fetch(proxyFn(targetUrl));
+          if (!res.ok) throw new Error(`HTTP Error: ${res.status}`);
+          
+          const text = await res.text();
+          // 如果代理伺服器壞掉，常常會回傳 HTML 錯誤網頁，這裡進行攔截
+          if (text.includes('<html') && !text.includes('<?xml')) {
+            throw new Error("代理伺服器回傳了無效的 HTML 而非 XML");
+          }
+          
+          return new DOMParser().parseFromString(text, "text/xml");
+        } catch (err) {
+          lastError = err;
+          console.warn(`代理連線失敗: ${proxyFn(targetUrl)}`, err);
+        }
+      }
+      throw lastError; // 所有代理都失敗時拋出錯誤
+    }
+
+    // 💡 2. 取得 HKO 颱風列表
     async function fetchTCList() {
       try {
-        let res;
-        // 第一層：嘗試原本的 CORS 代理
-        try {
-          res = await fetch(CORS_PROXY + encodeURIComponent(TC_LIST_URL));
-          if (!res.ok) throw new Error("Primary proxy failed");
-        } catch(e) {
-          // 第二層：如果失敗，自動切換到備用代理 (AllOrigins)
-          res = await fetch('https://api.allorigins.win/raw?url=' + encodeURIComponent(TC_LIST_URL));
-        }
+        const xmlDoc = await fetchXML(TC_LIST_URL);
         
-        const xmlText = await res.text();
-        const xmlDoc = new DOMParser().parseFromString(xmlText, "text/xml");
-        
-        // 根據官方文件結構抓取資料
+        // 根據官方文件，熱帶氣旋資料位於 <TropicalCyclone> 標籤內[cite: 4]
         const nodes = xmlDoc.getElementsByTagName("TropicalCyclone");
         activeStorms = Array.from(nodes).map(node => ({
+          // 擷取 ID、中文名稱與路徑檔案網址[cite: 4]
           id: node.getElementsByTagName("TropicalCycloneID")[0]?.textContent,
           cName: node.getElementsByTagName("TropicalCycloneChineseName")[0]?.textContent,
           url: node.getElementsByTagName("TropicalCycloneURL")[0]?.textContent
         }));
 
-        // 根據文件，若無活躍颱風則無 <TropicalCyclone> 標籤
         if(activeStorms.length === 0) {
           console.log("目前無生效中颱風，自動切換至測試模式");
-          mockBtn.click(); // 自動載入測試資料，避免卡在連線失敗
+          mockBtn.click();
           return;
         }
 
         stormSelect.innerHTML = activeStorms.map((s, i) => `<option value="${i}">🌀 ${s.cName} (${s.id})</option>`).join('');
         loadStormTrackXML(activeStorms[0]);
       } catch (err) {
-        console.error("載入 XML 發生錯誤：", err);
-        // 如果完全連不上，強制進入測試模式讓網頁仍可操作
-        mockBtn.click(); 
+        console.error("載入颱風列表發生錯誤：", err);
+        mockBtn.click(); // 發生任何錯誤，立刻進入測試模式
       }
     }
 
-    // 💡 載入單一颱風路徑 XML
+    // 💡 3. 載入單一颱風路徑 XML
     async function loadStormTrackXML(storm) {
       resetMapLayers();
       currentStorm = storm;
       
       try {
         const trackUrl = storm.url || `https://www.weather.gov.hk/wxinfo/currwx/hko_tctrack_${storm.id}.xml`;
-        
-        let res;
-        try {
-          res = await fetch(CORS_PROXY + encodeURIComponent(trackUrl));
-          if (!res.ok) throw new Error("Primary proxy failed");
-        } catch(e) {
-          res = await fetch('https://api.allorigins.win/raw?url=' + encodeURIComponent(trackUrl));
-        }
-        
-        const xmlDoc = new DOMParser().parseFromString(await res.text(), "text/xml");
+        const xmlDoc = await fetchXML(trackUrl);
         const points = [];
         
-        // 官方文件指出，座標位於 <PastInformation> (過去資訊) 與 <AnalysisInformation> (最新資訊) 內[cite: 1]
+        // 根據官方文件，座標資訊放置於 <PastInformation> (過去資訊) 與 <AnalysisInformation> (最新資訊) 之中[cite: 4]
         const pastNodes = Array.from(xmlDoc.getElementsByTagName("PastInformation"));
         const analysisNodes = Array.from(xmlDoc.getElementsByTagName("AnalysisInformation"));
         const allNodes = [...pastNodes, ...analysisNodes];
 
         allNodes.forEach(node => {
-          // 抓取 Latitude 與 Longitude 標籤[cite: 1]
+          // 抓取 Latitude (緯度) 與 Longitude (經度) 標籤[cite: 4]
           const lat = parseCoord(node.getElementsByTagName("Latitude")[0]?.textContent);
           const lng = parseCoord(node.getElementsByTagName("Longitude")[0]?.textContent);
           if(lat !== null && lng !== null) points.push([lat, lng]);
         });
 
-        if (points.length > 0) {
-          currentPos = points[points.length - 1];
-          
-          // 畫歷史線與現址
-          pastTrackLayers.push(L.polyline(points, { color: '#6b7280', weight: 3, dashArray: '5, 5' }).addTo(map));
-          pastTrackLayers.push(L.marker(currentPos, { 
-            icon: L.divIcon({ className: 'typhoon-center', iconSize: [16,16], iconAnchor: [8,8] }) 
-          }).addTo(map));
-          
-          map.setView(currentPos, 6);
-          userPathPolyline = L.polyline([currentPos], { color: '#ef4444', weight: 4 }).addTo(map);
-
-          checkUnlockStatus();
+        // 💥 解決先前的隱形地雷：如果完全沒有抓到座標點，拋出錯誤以觸發備援機制
+        if (points.length === 0) {
+          throw new Error("XML 中無有效座標數據");
         }
 
+        currentPos = points[points.length - 1];
+        
+        // 畫歷史線與現址
+        pastTrackLayers.push(L.polyline(points, { color: '#6b7280', weight: 3, dashArray: '5, 5' }).addTo(map));
+        pastTrackLayers.push(L.marker(currentPos, { 
+          icon: L.divIcon({ className: 'typhoon-center', iconSize: [16,16], iconAnchor: [8,8] }) 
+        }).addTo(map));
+        
+        map.setView(currentPos, 6);
+        userPathPolyline = L.polyline([currentPos], { color: '#ef4444', weight: 4 }).addTo(map);
+
+        checkUnlockStatus();
+
       } catch (err) { 
-        console.error("颱風路徑載入失敗", err); 
+        console.error("颱風路徑載入失敗:", err); 
+        // 確保路徑載入失敗時，畫面不會卡死，強制載入測試颱風
+        mockBtn.click(); 
       }
     }
-
     // 💡 檢查 LocalStorage，確認是否解鎖「大眾預測」
     function checkUnlockStatus() {
       if (!currentStorm || !currentPos) return;

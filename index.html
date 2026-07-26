@@ -3,14 +3,29 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>颱風會去邊 - Guess the Path!</title>
+    
+    <!-- Title & Social Media Embed Meta Tags -->
+    <title>颱風會去邊</title>
+    <meta name="description" content="一齊估下颱風會去邊">
+    
+    <meta property="og:title" content="颱風會去邊">
+    <meta property="og:description" content="一齊估下颱風會去邊">
+    <meta property="og:image" content="icon.png">
+    <meta property="og:type" content="website">
+    
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="颱風會去邊">
+    <meta name="twitter:description" content="一齊估下颱風會去邊">
+    <meta name="twitter:image" content="icon.png">
+    
+    <link rel="icon" href="icon.png">
     
     <!-- Leaflet CSS & JS -->
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
     <style>
-        body { margin: 0; padding: 0; font-family: sans-serif; overflow: hidden; background: #222; color: white;}
+        body { margin: 0; padding: 0; font-family: sans-serif; overflow: hidden; background: #f4f4f4; }
         #map { height: 100vh; width: 100vw; z-index: 1; }
         
         #ui-container {
@@ -20,6 +35,7 @@
             transform: translateX(-50%);
             z-index: 1000;
             background: rgba(0, 0, 0, 0.85);
+            color: white;
             padding: 15px;
             border-radius: 12px;
             width: 90%;
@@ -99,6 +115,14 @@
             width: 100%;
             display: none;
         }
+        
+        #community-lock-msg {
+            color: #ffa502;
+            font-size: 13px;
+            text-align: center;
+            font-weight: bold;
+            display: none;
+        }
     </style>
 </head>
 <body>
@@ -119,7 +143,9 @@
             <button id="btn-submit" class="btn">🚀 Submit Prediction</button>
         </div>
         
-        <div class="filter-container">
+        <div id="community-lock-msg">🔒 Submit a path for the current location to see community predictions!</div>
+        
+        <div class="filter-container" id="filter-wrapper">
             <label for="time-filter">Show public predictions from last: <span id="filter-val">All time</span></label>
             <input type="range" id="time-filter" min="1" max="72" value="72">
         </div>
@@ -129,7 +155,6 @@
     // 🔴 CHANGE THIS TO YOUR CLOUDFLARE WORKER DEPLOYMENT URL
     const API_BASE_URL = " https://typhoon-backend.someonechannel330.workers.dev";
 
-    // Anonymous User ID generation & retrieval
     function getUserId() {
         let uid = localStorage.getItem('typhoon_user_id');
         if (!uid) {
@@ -140,9 +165,9 @@
     }
     const USER_ID = getUserId();
 
-    // Map Setup
+    // Map Setup (Switched to Bright Theme 'light_all')
     const map = L.map('map', { zoomControl: false, doubleClickZoom: false }).setView([22.3, 114.16], 6);
-    L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+    L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
         attribution: '&copy; OpenStreetMap &copy; CARTO'
     }).addTo(map);
 
@@ -164,6 +189,8 @@
 
     const statusBar = document.getElementById('status-bar');
     const typhoonSelector = document.getElementById('typhoon-selector');
+    const filterWrapper = document.getElementById('filter-wrapper');
+    const communityLockMsg = document.getElementById('community-lock-msg');
 
     async function fetchWithTimeout(url, timeoutMs = 5000) {
         const controller = new AbortController();
@@ -223,7 +250,6 @@
                 let doc = parser.parseFromString(text, "text/xml");
                 
                 if (doc.querySelector("parsererror")) {
-                    console.warn("Malformed XML detected. Falling back to lenient parser...");
                     doc = parser.parseFromString(text, "text/html");
                 }
                 
@@ -305,7 +331,7 @@
             });
 
             if (pastCoords.length > 0) {
-                pastTrackLayer = L.polyline(pastCoords, { color: '#888', weight: 4, dashArray: '5, 10' }).addTo(map);
+                pastTrackLayer = L.polyline(pastCoords, { color: '#444', weight: 4, dashArray: '5, 10' }).addTo(map);
             }
 
             const analysisNode = trackXml.querySelector("AnalysisInformation") || trackXml.querySelector("analysisinformation");
@@ -332,6 +358,13 @@
         }
     }
 
+    // CHECK IF USER SUBMITTED FOR CURRENT LOCATION
+    function hasSubmittedForCurrentLocation() {
+        if (!currentTyphoonId || !currentTyphoonLocation) return false;
+        const lastSubmittedPos = localStorage.getItem(`submitted_${currentTyphoonId}`);
+        return lastSubmittedPos === JSON.stringify(currentTyphoonLocation);
+    }
+
     const btnDraw = document.getElementById('btn-draw');
     const drawControls = document.getElementById('draw-controls');
     const btnUndo = document.getElementById('btn-undo');
@@ -350,6 +383,11 @@
     btnDraw.addEventListener('click', () => {
         if (!currentTyphoonLocation) {
             alert("Waiting for typhoon location to load...");
+            return;
+        }
+
+        if (hasSubmittedForCurrentLocation()) {
+            alert("You have already submitted a prediction for this update! Wait for HKO to update the typhoon's position before guessing again.");
             return;
         }
 
@@ -386,7 +424,6 @@
         statusBar.innerText = `Points: ${currentCoordinates.length}/${MAX_POINTS}`;
     });
 
-    // SUBMIT PREDICTION TO BACKEND API
     btnSubmit.addEventListener('click', async () => {
         if (currentCoordinates.length < 2) {
             alert("Please plot at least one point!");
@@ -420,6 +457,9 @@
                 return;
             }
 
+            // Lock submission for this specific location
+            localStorage.setItem(`submitted_${currentTyphoonId}`, JSON.stringify(currentTyphoonLocation));
+
             statusBar.innerText = "Prediction Submitted!";
             cancelDrawing();
             await fetchAndRenderPredictions();
@@ -431,11 +471,23 @@
         }
     });
 
-    // FETCH PREDICTIONS FROM BACKEND API
     async function fetchAndRenderPredictions() {
         if (!currentTyphoonId) return;
 
+        // Verify if user is allowed to view community predictions
+        if (!hasSubmittedForCurrentLocation()) {
+            cachedPredictions = [];
+            renderPredictionsOnMap(); // Clear map
+            filterWrapper.style.display = 'none';
+            communityLockMsg.style.display = 'block';
+            return;
+        }
+
         try {
+            filterWrapper.style.display = 'flex';
+            communityLockMsg.style.display = 'none';
+            statusBar.innerText = "Loading community predictions...";
+
             const res = await fetch(`${API_BASE_URL}/api/predictions?typhoon_id=${currentTyphoonId}`);
             if (!res.ok) throw new Error(`HTTP ${res.status}`);
             
@@ -450,6 +502,7 @@
                 coords: typeof item.path_data === 'string' ? JSON.parse(item.path_data) : item.path_data
             }));
 
+            statusBar.innerText = `Tracking: ${activeTyphoons.find(t => t.id === currentTyphoonId)?.name || 'Active'}`;
             renderPredictionsOnMap();
 
         } catch (err) {

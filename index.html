@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="zh-HK">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Typhoon Doodle - Guess the Path!</title>
+    <title>颱風會去邊 - Guess the Path!</title>
     
     <!-- Leaflet CSS & JS -->
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
@@ -41,8 +41,16 @@
         }
         
         #btn-draw { background: #ff4757; color: white; }
-        #btn-submit { background: #2ed573; color: white; display: none; }
-        #btn-clear { background: #747d8c; color: white; display: none; }
+        
+        .draw-controls {
+            display: none;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+        }
+        
+        #btn-submit { background: #2ed573; color: white; grid-column: span 2; }
+        #btn-undo { background: #ffa502; color: white; }
+        #btn-cancel { background: #747d8c; color: white; }
 
         .filter-container {
             display: flex;
@@ -104,8 +112,12 @@
     
     <div id="ui-container">
         <button id="btn-draw" class="btn">✏️ Click Map to Plot Path</button>
-        <button id="btn-submit" class="btn">🚀 Submit Prediction</button>
-        <button id="btn-clear" class="btn">❌ Clear Points</button>
+        
+        <div id="draw-controls" class="draw-controls">
+            <button id="btn-undo" class="btn">↩️ Undo Point</button>
+            <button id="btn-cancel" class="btn">❌ Cancel</button>
+            <button id="btn-submit" class="btn">🚀 Submit Prediction</button>
+        </div>
         
         <div class="filter-container">
             <label for="time-filter">Show public predictions from last: <span id="filter-val">All time</span></label>
@@ -114,7 +126,8 @@
     </div>
 
 <script>
-    const map = L.map('map', { zoomControl: false }).setView([22.3, 114.16], 6);
+    // Disabled doubleClickZoom to prevent zooming when placing points quickly
+    const map = L.map('map', { zoomControl: false, doubleClickZoom: false }).setView([22.3, 114.16], 6);
     L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
         attribution: '&copy; OpenStreetMap &copy; CARTO'
     }).addTo(map);
@@ -138,7 +151,6 @@
     const statusBar = document.getElementById('status-bar');
     const typhoonSelector = document.getElementById('typhoon-selector');
 
-    // Helper to abort fetch requests if they take too long (prevents 15s+ hanging)
     async function fetchWithTimeout(url, timeoutMs = 5000) {
         const controller = new AbortController();
         const id = setTimeout(() => controller.abort(), timeoutMs);
@@ -152,10 +164,9 @@
         }
     }
 
-    // Reordered proxies: Most reliable first.
     const PROXIES = [
         async (url) => {
-            const res = await fetchWithTimeout(url, 3000); // Fast fail direct fetch
+            const res = await fetchWithTimeout(url, 3000);
             if (!res.ok) throw new Error(`Direct fetch HTTP ${res.status}`);
             return await res.text();
         },
@@ -212,9 +223,8 @@
 
     async function fetchTyphoonList() {
         try {
-            statusBar.innerText = "Fetching active typhoons...";
+            statusBar.innerText = "Connecting to HKO...";
             const listXml = await fetchXMLWithFallback(HKO_LIST_URL);
-            
             const tcNodes = listXml.querySelectorAll("TropicalCyclone, tropicalcyclone");
             
             if (tcNodes.length === 0) {
@@ -309,15 +319,18 @@
     }
 
     const btnDraw = document.getElementById('btn-draw');
+    const drawControls = document.getElementById('draw-controls');
+    const btnUndo = document.getElementById('btn-undo');
+    const btnCancel = document.getElementById('btn-cancel');
     const btnSubmit = document.getElementById('btn-submit');
-    const btnClear = document.getElementById('btn-clear');
 
     function cancelDrawing() {
         isDrawingMode = false;
         btnDraw.style.display = 'block';
-        btnSubmit.style.display = 'none';
-        btnClear.style.display = 'none';
+        drawControls.style.display = 'none';
         currentCoordinates = [];
+        if (currentDrawingLayer) map.removeLayer(currentDrawingLayer);
+        statusBar.innerText = currentTyphoonId ? `Tracking active` : 'Connected';
     }
 
     btnDraw.addEventListener('click', () => {
@@ -325,10 +338,17 @@
             alert("Waiting for typhoon location to load...");
             return;
         }
+
+        // Check if user already submitted for THIS specific coordinate update
+        const lastSubmittedPos = localStorage.getItem(`submitted_${currentTyphoonId}`);
+        if (lastSubmittedPos === JSON.stringify(currentTyphoonLocation)) {
+            alert("You have already submitted a prediction for this update! Wait for HKO to update the typhoon's position before guessing again.");
+            return;
+        }
+
         isDrawingMode = true;
         btnDraw.style.display = 'none';
-        btnSubmit.style.display = 'block';
-        btnClear.style.display = 'block';
+        drawControls.style.display = 'grid';
         currentCoordinates = [currentTyphoonLocation];
         statusBar.innerText = `Points: 1/${MAX_POINTS}`;
         
@@ -336,13 +356,16 @@
         currentDrawingLayer = L.polyline(currentCoordinates, { color: '#ff4757', weight: 5 }).addTo(map);
     });
 
-    btnClear.addEventListener('click', () => {
-        currentCoordinates = [currentTyphoonLocation];
-        if (currentDrawingLayer) currentDrawingLayer.setLatLngs(currentCoordinates);
-        statusBar.innerText = `Points: 1/${MAX_POINTS}`;
+    btnCancel.addEventListener('click', cancelDrawing);
+
+    btnUndo.addEventListener('click', () => {
+        if (currentCoordinates.length > 1) {
+            currentCoordinates.pop(); // Remove last point
+            currentDrawingLayer.setLatLngs(currentCoordinates);
+            statusBar.innerText = `Points: ${currentCoordinates.length}/${MAX_POINTS}`;
+        }
     });
 
-    // Swapped from hover to strict CLICK-to-place logic
     map.on('click', function(e) {
         if (!isDrawingMode) return;
         
@@ -357,7 +380,10 @@
     });
 
     btnSubmit.addEventListener('click', () => {
-        if (currentCoordinates.length < 2) return;
+        if (currentCoordinates.length < 2) {
+            alert("Please plot at least one point!");
+            return;
+        }
 
         const newPrediction = {
             id: Date.now(),
@@ -370,10 +396,12 @@
         const existing = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
         existing.push(newPrediction);
         localStorage.setItem(STORAGE_KEY, JSON.stringify(existing));
+        
+        // Lock submission for this specific HKO location update
+        localStorage.setItem(`submitted_${currentTyphoonId}`, JSON.stringify(currentTyphoonLocation));
 
-        statusBar.innerText = "Prediction Saved!";
+        statusBar.innerText = "Prediction Saved locally!";
         cancelDrawing();
-        if (currentDrawingLayer) map.removeLayer(currentDrawingLayer);
         loadPredictions();
     });
 
@@ -383,7 +411,7 @@
 
         let allPredictions = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
         
-        // Generate mock data if completely empty
+        // Generate mock data if completely empty (to simulate backend data)
         if (allPredictions.length === 0 && currentTyphoonLocation) {
             for(let i=0; i<3; i++) {
                 let fakeCoords = [currentTyphoonLocation];
@@ -409,14 +437,13 @@
 
         allPredictions.forEach(pred => {
             if (pred.typhoonId !== currentTyphoonId) return; 
-            
-            // Allow user's OWN tracks to bypass the time filter, so they never disappear
             if (maxAgeHours < 72 && pred.timestamp < cutoffTime && !pred.isMine) return;
 
             const color = pred.isMine ? '#ff4757' : '#1e90ff';
             const opacity = pred.isMine ? 1 : 0.4;
             const weight = pred.isMine ? 5 : 3;
             
+            // Render from saved array. Old predictions retain their original start point.
             const line = L.polyline(pred.coords, { color: color, weight: weight, opacity: opacity }).addTo(map);
             predictionLayers.push(line);
         });

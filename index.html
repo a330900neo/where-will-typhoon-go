@@ -135,18 +135,18 @@
     <div id="map"></div>
     
     <div id="ui-container">
-        <button id="btn-draw" class="btn">✏️ Click Map to Plot Path</button>
+        <button id="btn-draw" class="btn">✏️ 點擊去估</button>
         
         <div id="draw-controls" class="draw-controls">
-            <button id="btn-undo" class="btn">↩️ Undo Point</button>
-            <button id="btn-cancel" class="btn">❌ Cancel</button>
-            <button id="btn-submit" class="btn">🚀 Submit Prediction</button>
+            <button id="btn-undo" class="btn">↩️ 回帶</button>
+            <button id="btn-cancel" class="btn">❌ 唔估</button>
+            <button id="btn-submit" class="btn">🚀 發佈預測</button>
         </div>
         
-        <div id="community-lock-msg">🔒 Submit a path for the current location to see community predictions!</div>
+        <div id="community-lock-msg">發佈自己點估咗先睇到其他</div>
         
         <div class="filter-container" id="filter-wrapper">
-            <label for="time-filter">Show public predictions from last: <span id="filter-val">All time</span></label>
+            <label for="time-filter">Show大家最近X嘅預測: <span id="filter-val">All time</span></label>
             <input type="range" id="time-filter" min="1" max="72" value="72">
         </div>
     </div>
@@ -387,7 +387,7 @@
         }
 
         if (hasSubmittedForCurrentLocation()) {
-            alert("You have already submitted a prediction for this update! Wait for HKO to update the typhoon's position before guessing again.");
+            alert("你submit咗，等下次天文台update position先再估啦");
             return;
         }
 
@@ -452,7 +452,7 @@
 
             if (!res.ok) {
                 alert(result.error || "Submission failed");
-                statusBar.innerText = "Already submitted for this update!";
+                statusBar.innerText = "submit咗";
                 cancelDrawing();
                 return;
             }
@@ -486,7 +486,7 @@
         try {
             filterWrapper.style.display = 'flex';
             communityLockMsg.style.display = 'none';
-            statusBar.innerText = "Loading community predictions...";
+            statusBar.innerText = "Load緊大家點估";
 
             const res = await fetch(`${API_BASE_URL}/api/predictions?typhoon_id=${currentTyphoonId}`);
             if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -507,7 +507,7 @@
 
         } catch (err) {
             console.error("Failed to load predictions from backend:", err);
-            statusBar.innerText = "Failed to load community paths";
+            statusBar.innerText = "load 唔到";
         }
     }
 

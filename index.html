@@ -103,12 +103,12 @@
     <div id="map"></div>
     
     <div id="ui-container">
-        <button id="btn-draw" class="btn">✏️ Start Drawing Path</button>
+        <button id="btn-draw" class="btn">✏️ Click Map to Plot Path</button>
         <button id="btn-submit" class="btn">🚀 Submit Prediction</button>
-        <button id="btn-clear" class="btn">❌ Clear Drawing</button>
+        <button id="btn-clear" class="btn">❌ Clear Points</button>
         
         <div class="filter-container">
-            <label for="time-filter">Show predictions from last: <span id="filter-val">All time</span></label>
+            <label for="time-filter">Show public predictions from last: <span id="filter-val">All time</span></label>
             <input type="range" id="time-filter" min="1" max="72" value="72">
         </div>
     </div>
@@ -130,6 +130,7 @@
 
     let isDrawingMode = false;
     let currentCoordinates = [];
+    const MAX_POINTS = 70;
 
     const STORAGE_KEY = 'typhoon_predictions';
     const HKO_LIST_URL = "https://www.weather.gov.hk/wxinfo/currwx/tc_list.xml";
@@ -137,25 +138,40 @@
     const statusBar = document.getElementById('status-bar');
     const typhoonSelector = document.getElementById('typhoon-selector');
 
+    // Helper to abort fetch requests if they take too long (prevents 15s+ hanging)
+    async function fetchWithTimeout(url, timeoutMs = 5000) {
+        const controller = new AbortController();
+        const id = setTimeout(() => controller.abort(), timeoutMs);
+        try {
+            const response = await fetch(url, { signal: controller.signal });
+            clearTimeout(id);
+            return response;
+        } catch (error) {
+            clearTimeout(id);
+            throw error;
+        }
+    }
+
+    // Reordered proxies: Most reliable first.
     const PROXIES = [
         async (url) => {
-            const res = await fetch(url);
+            const res = await fetchWithTimeout(url, 3000); // Fast fail direct fetch
             if (!res.ok) throw new Error(`Direct fetch HTTP ${res.status}`);
             return await res.text();
         },
         async (url) => {
-            const res = await fetch(`https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`);
-            if (!res.ok) throw new Error(`AllOrigins HTTP ${res.status}`);
-            return await res.text();
-        },
-        async (url) => {
-            const res = await fetch(`https://corsproxy.io/?url=${encodeURIComponent(url)}`);
+            const res = await fetchWithTimeout(`https://corsproxy.io/?url=${encodeURIComponent(url)}`, 5000);
             if (!res.ok) throw new Error(`CORSProxy HTTP ${res.status}`);
             return await res.text();
         },
         async (url) => {
-            const res = await fetch(`https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(url)}`);
+            const res = await fetchWithTimeout(`https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(url)}`, 5000);
             if (!res.ok) throw new Error(`CodeTabs HTTP ${res.status}`);
+            return await res.text();
+        },
+        async (url) => {
+            const res = await fetchWithTimeout(`https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`, 5000);
+            if (!res.ok) throw new Error(`AllOrigins HTTP ${res.status}`);
             return await res.text();
         }
     ];
@@ -181,9 +197,8 @@
                 const parser = new DOMParser();
                 let doc = parser.parseFromString(text, "text/xml");
                 
-                // If strict XML parsing fails (like the HKO missing tag error), fall back to lenient HTML parsing
                 if (doc.querySelector("parsererror")) {
-                    console.warn("Malformed XML detected. Falling back to lenient parser to ignore minor errors...");
+                    console.warn("Malformed XML detected. Falling back to lenient parser...");
                     doc = parser.parseFromString(text, "text/html");
                 }
                 
@@ -192,7 +207,7 @@
                 console.warn(`Attempt ${i + 1} failed:`, err.message);
             }
         }
-        throw new Error("All fetching methods failed.");
+        throw new Error("All fetching methods failed or timed out.");
     }
 
     async function fetchTyphoonList() {
@@ -200,11 +215,10 @@
             statusBar.innerText = "Fetching active typhoons...";
             const listXml = await fetchXMLWithFallback(HKO_LIST_URL);
             
-            // Using case-insensitive tag names for HTML parser compatibility
             const tcNodes = listXml.querySelectorAll("TropicalCyclone, tropicalcyclone");
             
             if (tcNodes.length === 0) {
-                statusBar.innerText = "No active typhoons from HKO currently.";
+                statusBar.innerText = "No active typhoons currently.";
                 return;
             }
 
@@ -247,7 +261,7 @@
         if (!typhoon || !typhoon.url) return;
         
         try {
-            statusBar.innerText = `Loading track: ${typhoon.name}`;
+            statusBar.innerText = `Loading track: ${typhoon.name}...`;
             currentTyphoonId = typhoon.id;
 
             if (pastTrackLayer) map.removeLayer(pastTrackLayer);
@@ -300,7 +314,6 @@
 
     function cancelDrawing() {
         isDrawingMode = false;
-        map.dragging.enable();
         btnDraw.style.display = 'block';
         btnSubmit.style.display = 'none';
         btnClear.style.display = 'none';
@@ -313,11 +326,11 @@
             return;
         }
         isDrawingMode = true;
-        map.dragging.disable();
         btnDraw.style.display = 'none';
         btnSubmit.style.display = 'block';
         btnClear.style.display = 'block';
         currentCoordinates = [currentTyphoonLocation];
+        statusBar.innerText = `Points: 1/${MAX_POINTS}`;
         
         if (currentDrawingLayer) map.removeLayer(currentDrawingLayer);
         currentDrawingLayer = L.polyline(currentCoordinates, { color: '#ff4757', weight: 5 }).addTo(map);
@@ -326,13 +339,21 @@
     btnClear.addEventListener('click', () => {
         currentCoordinates = [currentTyphoonLocation];
         if (currentDrawingLayer) currentDrawingLayer.setLatLngs(currentCoordinates);
+        statusBar.innerText = `Points: 1/${MAX_POINTS}`;
     });
 
-    map.on('mousemove touchmove', function(e) {
+    // Swapped from hover to strict CLICK-to-place logic
+    map.on('click', function(e) {
         if (!isDrawingMode) return;
-        const latlng = e.latlng || map.mouseEventToLatLng(e.originalEvent.touches[0]);
-        currentCoordinates.push([latlng.lat, latlng.lng]);
+        
+        if (currentCoordinates.length >= MAX_POINTS) {
+            statusBar.innerText = "Max points reached! Please submit.";
+            return;
+        }
+        
+        currentCoordinates.push([e.latlng.lat, e.latlng.lng]);
         currentDrawingLayer.setLatLngs(currentCoordinates);
+        statusBar.innerText = `Points: ${currentCoordinates.length}/${MAX_POINTS}`;
     });
 
     btnSubmit.addEventListener('click', () => {
@@ -350,6 +371,7 @@
         existing.push(newPrediction);
         localStorage.setItem(STORAGE_KEY, JSON.stringify(existing));
 
+        statusBar.innerText = "Prediction Saved!";
         cancelDrawing();
         if (currentDrawingLayer) map.removeLayer(currentDrawingLayer);
         loadPredictions();
@@ -361,6 +383,7 @@
 
         let allPredictions = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
         
+        // Generate mock data if completely empty
         if (allPredictions.length === 0 && currentTyphoonLocation) {
             for(let i=0; i<3; i++) {
                 let fakeCoords = [currentTyphoonLocation];
@@ -386,12 +409,15 @@
 
         allPredictions.forEach(pred => {
             if (pred.typhoonId !== currentTyphoonId) return; 
-            if (maxAgeHours < 72 && pred.timestamp < cutoffTime) return;
+            
+            // Allow user's OWN tracks to bypass the time filter, so they never disappear
+            if (maxAgeHours < 72 && pred.timestamp < cutoffTime && !pred.isMine) return;
 
             const color = pred.isMine ? '#ff4757' : '#1e90ff';
             const opacity = pred.isMine ? 1 : 0.4;
+            const weight = pred.isMine ? 5 : 3;
             
-            const line = L.polyline(pred.coords, { color: color, weight: 4, opacity: opacity }).addTo(map);
+            const line = L.polyline(pred.coords, { color: color, weight: weight, opacity: opacity }).addTo(map);
             predictionLayers.push(line);
         });
     }

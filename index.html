@@ -1,347 +1,412 @@
 <!DOCTYPE html>
-<html lang="zh-HK">
+<html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-  <title>颱風會去邊?</title>
-  <!-- 網頁標籤圖示 (Favicon) -->
-  <link rel="icon" type="image/png" href="icon.png" />
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Typhoon Doodle - Guess the Path!</title>
+    
+    <!-- Leaflet CSS & JS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
-  <!-- Discord / FB / IG 預覽卡片設定 (Open Graph) -->
-  <meta property="og:title" content="颱風會去邊?" />
-  <meta property="og:description" content="一齊估下" />
-  <meta property="og:type" content="website" /> 
-  <meta property="og:url" content="https://a330900neo.github.io/where-will-typhoon-go/" />
-  <!-- 下面這行是預覽圖片的網址，請確保你有把 icon.png 傳到 GitHub -->
-  <meta property="og:image" content="https://a330900neo.github.io/where-will-typhoon-go/icon.png" />
-  <meta name="theme-color" content="#ef4444" />
+    <style>
+        body { margin: 0; padding: 0; font-family: sans-serif; overflow: hidden; background: #222; color: white;}
+        #map { height: 100vh; width: 100vw; z-index: 1; }
+        
+        #ui-container {
+            position: absolute;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 1000;
+            background: rgba(0, 0, 0, 0.85);
+            padding: 15px;
+            border-radius: 12px;
+            width: 90%;
+            max-width: 400px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.5);
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
 
-  <!-- Twitter / X 預覽卡片設定 -->
-  <meta name="twitter:card" content="summary_large_image" />
-  <meta name="twitter:title" content="颱風會去邊?" />
-  <meta name="twitter:description" content="一齊估下" />
-  <meta name="twitter:image" content="https://a330900neo.github.io/where-will-typhoon-go/icon.png" />
-  <script src="https://cdn.tailwindcss.com"></script>
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+        .btn {
+            padding: 12px;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: bold;
+            cursor: pointer;
+            text-align: center;
+        }
+        
+        #btn-draw { background: #ff4757; color: white; }
+        #btn-submit { background: #2ed573; color: white; display: none; }
+        #btn-clear { background: #747d8c; color: white; display: none; }
 
-  <style>
-    body, html { margin: 0; padding: 0; height: 100%; overflow: hidden; }
-    #map { height: 100%; width: 100%; z-index: 1; }
-    #controls, #header { z-index: 1000; }
-    .typhoon-center {
-      background-color: #ef4444; border: 3px solid #ffffff; border-radius: 50%;
-      animation: pulse 1.8s infinite;
-    }
-    @keyframes pulse {
-      0% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7); }
-      70% { box-shadow: 0 0 0 12px rgba(239, 68, 68, 0); }
-      100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
-    }
-  </style>
+        .filter-container {
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+            font-size: 14px;
+        }
+
+        input[type=range] { width: 100%; }
+
+        #top-bar {
+            position: absolute;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 1000;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            align-items: center;
+            width: 90%;
+            max-width: 350px;
+        }
+
+        #status-bar {
+            background: rgba(255, 255, 255, 0.95);
+            color: #333;
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-weight: bold;
+            text-align: center;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+            width: 100%;
+            box-sizing: border-box;
+        }
+
+        #typhoon-selector {
+            padding: 8px;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: bold;
+            border: none;
+            background: white;
+            color: #333;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+            width: 100%;
+            display: none;
+        }
+    </style>
 </head>
-<body class="flex flex-col relative bg-gray-100">
+<body>
 
-  <header id="header" class="absolute top-0 left-0 right-0 bg-white/95 backdrop-blur-md shadow-md p-3">
-    <div class="flex items-center justify-between gap-2">
-      <h1 class="text-base font-bold text-gray-800 shrink-0">🌀 颱風會去邊</h1>
-      <select id="stormSelect" class="bg-gray-100 text-xs py-1.5 px-2 rounded-lg border w-full">
-        <option value="">📡 讀取天文台資料...</option>
-      </select>
-    </div>
-    <div class="text-[11px] text-gray-500 mt-1 flex justify-between">
-      <span>來源：<span id="statusText" class="font-semibold text-blue-600">tc_list.xml</span></span>
-      <button id="mockBtn" class="text-[10px] text-gray-400 underline">載入測試數據</button>
-    </div>
-  </header>
-
-  <div id="map"></div>
-
-  <div id="controls" class="absolute bottom-0 left-0 right-0 bg-white rounded-t-2xl shadow-[0_-4px_12px_rgba(0,0,0,0.15)] p-4 pb-6 transition-all">
-    <div class="flex justify-between items-center mb-3">
-      <span id="pointCount" class="text-xs font-bold text-gray-600">點擊地圖從現址開始預測</span>
-      <button id="undoBtn" class="text-xs text-red-500 font-bold px-3 py-1 rounded bg-red-50 disabled:opacity-40" disabled>↩ 復原</button>
+    <div id="top-bar">
+        <div id="status-bar">Connecting to HKO...</div>
+        <select id="typhoon-selector"></select>
     </div>
     
-    <div class="grid grid-cols-2 gap-2">
-      <button id="submitBtn" class="bg-blue-600 text-white text-sm font-bold py-3 rounded-xl disabled:opacity-50" disabled>
-        送出預測
-      </button>
-      <button id="viewOthersBtn" class="bg-gray-200 text-gray-500 text-sm font-bold py-3 rounded-xl flex items-center justify-center gap-1" disabled>
-        🔒 先預測才能看
-      </button>
-    </div>
-  </div>
-
-  <script>
-    // ⚠️ 請替換為你實際的 Cloudflare Worker 網址
-    const WORKER_URL = 'https://typhoon-api.vercel.app/api';
+    <div id="map"></div>
     
-    const CORS_PROXY = 'https://corsproxy.io/?';
-    const TC_LIST_URL = 'https://www.weather.gov.hk/wxinfo/currwx/tc_list.xml';
+    <div id="ui-container">
+        <button id="btn-draw" class="btn">✏️ Start Drawing Path</button>
+        <button id="btn-submit" class="btn">🚀 Submit Prediction</button>
+        <button id="btn-clear" class="btn">❌ Clear Drawing</button>
+        
+        <div class="filter-container">
+            <label for="time-filter">Show predictions from last: <span id="filter-val">All time</span></label>
+            <input type="range" id="time-filter" min="1" max="72" value="72">
+        </div>
+    </div>
 
-    const map = L.map('map', { zoomControl: false }).setView([20.0, 116.0], 6);
-    L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', { attribution: '&copy; HKO' }).addTo(map);
+<script>
+    const map = L.map('map', { zoomControl: false }).setView([22.3, 114.16], 6);
+    L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+        attribution: '&copy; OpenStreetMap &copy; CARTO'
+    }).addTo(map);
 
-    let activeStorms = [], currentStorm = null, currentPos = null;
-    let pastTrackLayers = [], userPredictionPoints = [], userPathPolyline = null, userMarkers = [];
-    let crowdLayers = []; // 存放其他人預測的圖層
+    let activeTyphoons = [];
+    let currentTyphoonId = null;
+    let currentTyphoonLocation = null;
+    
+    let pastTrackLayer = null;
+    let currentMarkerLayer = null;
+    let currentDrawingLayer = null;
+    let predictionLayers = [];
 
-    const stormSelect = document.getElementById('stormSelect');
-    const statusText = document.getElementById('statusText');
-    const pointCount = document.getElementById('pointCount');
-    const undoBtn = document.getElementById('undoBtn');
-    const submitBtn = document.getElementById('submitBtn');
-    const viewOthersBtn = document.getElementById('viewOthersBtn');
-    const mockBtn = document.getElementById('mockBtn');
+    let isDrawingMode = false;
+    let currentCoordinates = [];
 
-    function parseCoord(str) {
-      if (!str) return null;
-      const num = parseFloat(str.trim());
-      if (isNaN(num)) return null;
-      const dir = str.trim().slice(-1).toUpperCase();
-      return (dir === 'S' || dir === 'W') ? -num : num;
+    const STORAGE_KEY = 'typhoon_predictions';
+    const HKO_LIST_URL = "https://www.weather.gov.hk/wxinfo/currwx/tc_list.xml";
+
+    const statusBar = document.getElementById('status-bar');
+    const typhoonSelector = document.getElementById('typhoon-selector');
+
+    const PROXIES = [
+        async (url) => {
+            const res = await fetch(url);
+            if (!res.ok) throw new Error(`Direct fetch HTTP ${res.status}`);
+            return await res.text();
+        },
+        async (url) => {
+            const res = await fetch(`https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`);
+            if (!res.ok) throw new Error(`AllOrigins HTTP ${res.status}`);
+            return await res.text();
+        },
+        async (url) => {
+            const res = await fetch(`https://corsproxy.io/?url=${encodeURIComponent(url)}`);
+            if (!res.ok) throw new Error(`CORSProxy HTTP ${res.status}`);
+            return await res.text();
+        },
+        async (url) => {
+            const res = await fetch(`https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(url)}`);
+            if (!res.ok) throw new Error(`CodeTabs HTTP ${res.status}`);
+            return await res.text();
+        }
+    ];
+
+    async function fetchXMLWithFallback(targetUrl) {
+        let safeUrl = targetUrl.replace("http://", "https://");
+
+        for (let i = 0; i < PROXIES.length; i++) {
+            try {
+                let text = await PROXIES[i](safeUrl);
+                if (!text) throw new Error("Empty response");
+                
+                const firstTag = text.indexOf('<');
+                const lastTag = text.lastIndexOf('>');
+                if (firstTag !== -1 && lastTag !== -1) {
+                    text = text.substring(firstTag, lastTag + 1);
+                }
+                
+                if (text.startsWith("<!DOCTYPE html>") || text.toLowerCase().includes("502 bad gateway")) {
+                    throw new Error("Returned HTML error page instead of data");
+                }
+                
+                const parser = new DOMParser();
+                let doc = parser.parseFromString(text, "text/xml");
+                
+                // If strict XML parsing fails (like the HKO missing tag error), fall back to lenient HTML parsing
+                if (doc.querySelector("parsererror")) {
+                    console.warn("Malformed XML detected. Falling back to lenient parser to ignore minor errors...");
+                    doc = parser.parseFromString(text, "text/html");
+                }
+                
+                return doc;
+            } catch (err) {
+                console.warn(`Attempt ${i + 1} failed:`, err.message);
+            }
+        }
+        throw new Error("All fetching methods failed.");
     }
 
-    // 取得 HKO 颱風列表 (同上一個版本)
-// 💡 取得 HKO 颱風列表 (強化容錯與備援代理版本)
-// 💡 1. 建立強大的 XML 抓取器，自帶多重 CORS 代理備援機制
-    async function fetchXML(targetUrl) {
-      const proxies = [
-        url => 'https://corsproxy.io/?' + encodeURIComponent(url),
-        url => 'https://api.allorigins.win/raw?url=' + encodeURIComponent(url)
-      ];
-
-      let lastError = null;
-      for (let proxyFn of proxies) {
+    async function fetchTyphoonList() {
         try {
-          const res = await fetch(proxyFn(targetUrl));
-          if (!res.ok) throw new Error(`HTTP Error: ${res.status}`);
-          
-          const text = await res.text();
-          // 如果代理伺服器壞掉，常常會回傳 HTML 錯誤網頁，這裡進行攔截
-          if (text.includes('<html') && !text.includes('<?xml')) {
-            throw new Error("代理伺服器回傳了無效的 HTML 而非 XML");
-          }
-          
-          return new DOMParser().parseFromString(text, "text/xml");
-        } catch (err) {
-          lastError = err;
-          console.warn(`代理連線失敗: ${proxyFn(targetUrl)}`, err);
+            statusBar.innerText = "Fetching active typhoons...";
+            const listXml = await fetchXMLWithFallback(HKO_LIST_URL);
+            
+            // Using case-insensitive tag names for HTML parser compatibility
+            const tcNodes = listXml.querySelectorAll("TropicalCyclone, tropicalcyclone");
+            
+            if (tcNodes.length === 0) {
+                statusBar.innerText = "No active typhoons from HKO currently.";
+                return;
+            }
+
+            activeTyphoons = [];
+            tcNodes.forEach(node => {
+                activeTyphoons.push({
+                    id: (node.querySelector("TropicalCycloneID") || node.querySelector("tropicalcycloneid"))?.textContent.trim(),
+                    name: (node.querySelector("TropicalCycloneEnglishName") || node.querySelector("tropicalcycloneenglishname"))?.textContent.trim(),
+                    url: (node.querySelector("TropicalCycloneURL") || node.querySelector("tropicalcycloneurl"))?.textContent.trim()
+                });
+            });
+
+            if (activeTyphoons.length > 1) {
+                typhoonSelector.style.display = 'block';
+                typhoonSelector.innerHTML = '';
+                activeTyphoons.forEach(tc => {
+                    const option = document.createElement('option');
+                    option.value = tc.id;
+                    option.text = tc.name;
+                    typhoonSelector.appendChild(option);
+                });
+
+                typhoonSelector.addEventListener('change', (e) => {
+                    const selectedTc = activeTyphoons.find(t => t.id === e.target.value);
+                    loadTyphoonTrack(selectedTc);
+                });
+            } else {
+                typhoonSelector.style.display = 'none';
+            }
+
+            loadTyphoonTrack(activeTyphoons[0]);
+
+        } catch (error) {
+            console.error(error);
+            statusBar.innerText = "Error loading HKO list";
         }
-      }
-      throw lastError; // 所有代理都失敗時拋出錯誤
     }
 
-    // 💡 2. 取得 HKO 颱風列表
-    async function fetchTCList() {
-      try {
-        const xmlDoc = await fetchXML(TC_LIST_URL);
+    async function loadTyphoonTrack(typhoon) {
+        if (!typhoon || !typhoon.url) return;
         
-        // 根據官方文件，熱帶氣旋資料位於 <TropicalCyclone> 標籤內[cite: 4]
-        const nodes = xmlDoc.getElementsByTagName("TropicalCyclone");
-        activeStorms = Array.from(nodes).map(node => ({
-          // 擷取 ID、中文名稱與路徑檔案網址[cite: 4]
-          id: node.getElementsByTagName("TropicalCycloneID")[0]?.textContent,
-          cName: node.getElementsByTagName("TropicalCycloneChineseName")[0]?.textContent,
-          url: node.getElementsByTagName("TropicalCycloneURL")[0]?.textContent
-        }));
+        try {
+            statusBar.innerText = `Loading track: ${typhoon.name}`;
+            currentTyphoonId = typhoon.id;
 
-        if(activeStorms.length === 0) {
-          console.log("目前無生效中颱風，自動切換至測試模式");
-          mockBtn.click();
-          return;
+            if (pastTrackLayer) map.removeLayer(pastTrackLayer);
+            if (currentMarkerLayer) map.removeLayer(currentMarkerLayer);
+            if (currentDrawingLayer) map.removeLayer(currentDrawingLayer);
+            currentTyphoonLocation = null;
+            cancelDrawing();
+
+            const trackXml = await fetchXMLWithFallback(typhoon.url);
+
+            const pastInfoNodes = trackXml.querySelectorAll("PastInformation, pastinformation");
+            let pastCoords = [];
+            pastInfoNodes.forEach(node => {
+                const latStr = (node.querySelector("Latitude") || node.querySelector("latitude"))?.textContent.trim();
+                const lonStr = (node.querySelector("Longitude") || node.querySelector("longitude"))?.textContent.trim();
+                if (latStr && lonStr) pastCoords.push([parseFloat(latStr), parseFloat(lonStr)]);
+            });
+
+            if (pastCoords.length > 0) {
+                pastTrackLayer = L.polyline(pastCoords, { color: '#888', weight: 4, dashArray: '5, 10' }).addTo(map);
+            }
+
+            const analysisNode = trackXml.querySelector("AnalysisInformation") || trackXml.querySelector("analysisinformation");
+            if (analysisNode) {
+                const lat = parseFloat((analysisNode.querySelector("Latitude") || analysisNode.querySelector("latitude")).textContent.trim());
+                const lon = parseFloat((analysisNode.querySelector("Longitude") || analysisNode.querySelector("longitude")).textContent.trim());
+                currentTyphoonLocation = [lat, lon];
+                
+                currentMarkerLayer = L.circleMarker(currentTyphoonLocation, {
+                    color: 'red', fillColor: '#f03', fillOpacity: 1, radius: 8
+                }).addTo(map).bindPopup(`${typhoon.name} (Current)`).openPopup();
+                
+                map.setView(currentTyphoonLocation, 5);
+                statusBar.innerText = `Tracking: ${typhoon.name}`;
+            } else {
+                statusBar.innerText = `No current location data for ${typhoon.name}`;
+            }
+
+            loadPredictions();
+
+        } catch (error) {
+            console.error(error);
+            statusBar.innerText = `Failed to load ${typhoon.name} track`;
         }
-
-        stormSelect.innerHTML = activeStorms.map((s, i) => `<option value="${i}">🌀 ${s.cName} (${s.id})</option>`).join('');
-        loadStormTrackXML(activeStorms[0]);
-      } catch (err) {
-        console.error("載入颱風列表發生錯誤：", err);
-        mockBtn.click(); // 發生任何錯誤，立刻進入測試模式
-      }
     }
 
-    // 💡 3. 載入單一颱風路徑 XML
-    async function loadStormTrackXML(storm) {
-      resetMapLayers();
-      currentStorm = storm;
-      
-      try {
-        const trackUrl = storm.url || `https://www.weather.gov.hk/wxinfo/currwx/hko_tctrack_${storm.id}.xml`;
-        const xmlDoc = await fetchXML(trackUrl);
-        const points = [];
-        
-        // 根據官方文件，座標資訊放置於 <PastInformation> (過去資訊) 與 <AnalysisInformation> (最新資訊) 之中[cite: 4]
-        const pastNodes = Array.from(xmlDoc.getElementsByTagName("PastInformation"));
-        const analysisNodes = Array.from(xmlDoc.getElementsByTagName("AnalysisInformation"));
-        const allNodes = [...pastNodes, ...analysisNodes];
+    const btnDraw = document.getElementById('btn-draw');
+    const btnSubmit = document.getElementById('btn-submit');
+    const btnClear = document.getElementById('btn-clear');
 
-        allNodes.forEach(node => {
-          // 抓取 Latitude (緯度) 與 Longitude (經度) 標籤[cite: 4]
-          const lat = parseCoord(node.getElementsByTagName("Latitude")[0]?.textContent);
-          const lng = parseCoord(node.getElementsByTagName("Longitude")[0]?.textContent);
-          if(lat !== null && lng !== null) points.push([lat, lng]);
+    function cancelDrawing() {
+        isDrawingMode = false;
+        map.dragging.enable();
+        btnDraw.style.display = 'block';
+        btnSubmit.style.display = 'none';
+        btnClear.style.display = 'none';
+        currentCoordinates = [];
+    }
+
+    btnDraw.addEventListener('click', () => {
+        if (!currentTyphoonLocation) {
+            alert("Waiting for typhoon location to load...");
+            return;
+        }
+        isDrawingMode = true;
+        map.dragging.disable();
+        btnDraw.style.display = 'none';
+        btnSubmit.style.display = 'block';
+        btnClear.style.display = 'block';
+        currentCoordinates = [currentTyphoonLocation];
+        
+        if (currentDrawingLayer) map.removeLayer(currentDrawingLayer);
+        currentDrawingLayer = L.polyline(currentCoordinates, { color: '#ff4757', weight: 5 }).addTo(map);
+    });
+
+    btnClear.addEventListener('click', () => {
+        currentCoordinates = [currentTyphoonLocation];
+        if (currentDrawingLayer) currentDrawingLayer.setLatLngs(currentCoordinates);
+    });
+
+    map.on('mousemove touchmove', function(e) {
+        if (!isDrawingMode) return;
+        const latlng = e.latlng || map.mouseEventToLatLng(e.originalEvent.touches[0]);
+        currentCoordinates.push([latlng.lat, latlng.lng]);
+        currentDrawingLayer.setLatLngs(currentCoordinates);
+    });
+
+    btnSubmit.addEventListener('click', () => {
+        if (currentCoordinates.length < 2) return;
+
+        const newPrediction = {
+            id: Date.now(),
+            typhoonId: currentTyphoonId,
+            timestamp: Date.now(),
+            isMine: true,
+            coords: currentCoordinates
+        };
+
+        const existing = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
+        existing.push(newPrediction);
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(existing));
+
+        cancelDrawing();
+        if (currentDrawingLayer) map.removeLayer(currentDrawingLayer);
+        loadPredictions();
+    });
+
+    function loadPredictions() {
+        predictionLayers.forEach(layer => map.removeLayer(layer));
+        predictionLayers = [];
+
+        let allPredictions = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
+        
+        if (allPredictions.length === 0 && currentTyphoonLocation) {
+            for(let i=0; i<3; i++) {
+                let fakeCoords = [currentTyphoonLocation];
+                let curLat = currentTyphoonLocation[0], curLng = currentTyphoonLocation[1];
+                for(let j=0; j<10; j++) {
+                    curLat += (Math.random() - 0.2) * 2;
+                    curLng -= (Math.random() - 0.2) * 2;
+                    fakeCoords.push([curLat, curLng]);
+                }
+                allPredictions.push({
+                    id: 'mock'+i,
+                    typhoonId: currentTyphoonId,
+                    timestamp: Date.now() - (Math.random() * 86400000),
+                    isMine: false,
+                    coords: fakeCoords
+                });
+            }
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(allPredictions));
+        }
+
+        const maxAgeHours = document.getElementById('time-filter').value;
+        const cutoffTime = Date.now() - (maxAgeHours * 60 * 60 * 1000);
+
+        allPredictions.forEach(pred => {
+            if (pred.typhoonId !== currentTyphoonId) return; 
+            if (maxAgeHours < 72 && pred.timestamp < cutoffTime) return;
+
+            const color = pred.isMine ? '#ff4757' : '#1e90ff';
+            const opacity = pred.isMine ? 1 : 0.4;
+            
+            const line = L.polyline(pred.coords, { color: color, weight: 4, opacity: opacity }).addTo(map);
+            predictionLayers.push(line);
         });
-
-        // 💥 解決先前的隱形地雷：如果完全沒有抓到座標點，拋出錯誤以觸發備援機制
-        if (points.length === 0) {
-          throw new Error("XML 中無有效座標數據");
-        }
-
-        currentPos = points[points.length - 1];
-        
-        // 畫歷史線與現址
-        pastTrackLayers.push(L.polyline(points, { color: '#6b7280', weight: 3, dashArray: '5, 5' }).addTo(map));
-        pastTrackLayers.push(L.marker(currentPos, { 
-          icon: L.divIcon({ className: 'typhoon-center', iconSize: [16,16], iconAnchor: [8,8] }) 
-        }).addTo(map));
-        
-        map.setView(currentPos, 6);
-        userPathPolyline = L.polyline([currentPos], { color: '#ef4444', weight: 4 }).addTo(map);
-
-        checkUnlockStatus();
-
-      } catch (err) { 
-        console.error("颱風路徑載入失敗:", err); 
-        // 確保路徑載入失敗時，畫面不會卡死，強制載入測試颱風
-        mockBtn.click(); 
-      }
-    }
-    // 💡 檢查 LocalStorage，確認是否解鎖「大眾預測」
-    function checkUnlockStatus() {
-      if (!currentStorm || !currentPos) return;
-      
-      const storageKey = `predicted_${currentStorm.id}`;
-      const savedData = JSON.parse(localStorage.getItem(storageKey));
-
-      // 如果有存檔，且存檔的「起始座標」等於「颱風當前座標」 (代表颱風還沒移動)
-      if (savedData && savedData.lat === currentPos[0] && savedData.lng === currentPos[1]) {
-        viewOthersBtn.disabled = false;
-        viewOthersBtn.className = "bg-indigo-600 text-white text-sm font-bold py-3 rounded-xl flex items-center justify-center shadow-md active:scale-95";
-        viewOthersBtn.innerHTML = "👁️ 看大眾預測";
-      } else {
-        // 颱風移動了，或者沒預測過 -> 上鎖
-        viewOthersBtn.disabled = true;
-        viewOthersBtn.className = "bg-gray-200 text-gray-500 text-sm font-bold py-3 rounded-xl flex items-center justify-center";
-        viewOthersBtn.innerHTML = "🔒 先預測才能看";
-      }
     }
 
-    // 畫線邏輯
-    map.on('click', e => {
-      if (!currentPos) return;
-      userPredictionPoints.push([e.latlng.lat, e.latlng.lng]);
-      userPathPolyline.setLatLngs([currentPos, ...userPredictionPoints]);
-      userMarkers.push(L.circleMarker([e.latlng.lat, e.latlng.lng], { radius: 5, color: '#2563eb', fillColor: '#3b82f6', fillOpacity: 1 }).addTo(map));
-      updateUI();
+    const filterInput = document.getElementById('time-filter');
+    const filterValLabel = document.getElementById('filter-val');
+
+    filterInput.addEventListener('input', (e) => {
+        const val = e.target.value;
+        filterValLabel.innerText = (val == 72) ? "All time" : `${val} hours`;
+        loadPredictions();
     });
 
-    undoBtn.addEventListener('click', () => {
-      userPredictionPoints.pop();
-      userPathPolyline.setLatLngs([currentPos, ...userPredictionPoints]);
-      map.removeLayer(userMarkers.pop());
-      updateUI();
-    });
+    fetchTyphoonList();
 
-    function updateUI() {
-      const count = userPredictionPoints.length;
-      pointCount.textContent = count === 0 ? "點擊地圖從現址開始預測" : `已畫出 ${count} 個轉折點`;
-      undoBtn.disabled = submitBtn.disabled = count === 0;
-    }
-
-    function resetMapLayers() {
-      [...pastTrackLayers, ...userMarkers, ...crowdLayers].forEach(l => map.removeLayer(l));
-      if (userPathPolyline) map.removeLayer(userPathPolyline);
-      pastTrackLayers = []; userMarkers = []; crowdLayers = []; userPredictionPoints = [];
-      updateUI();
-    }
-
-    stormSelect.addEventListener('change', e => { if(e.target.value) loadStormTrackXML(activeStorms[e.target.value]); });
-
-    // 💡 1. 提交至 Worker
-    submitBtn.addEventListener('click', async () => {
-      submitBtn.textContent = "傳送中...";
-      
-      const payload = {
-        stormId: currentStorm.id,
-        startPos: currentPos,
-        predictedPath: userPredictionPoints
-      };
-
-      try {
-        if(WORKER_URL.includes("YOUR_WORKER_NAME")) {
-           // 避免尚未設定 Worker 時報錯，直接當作成功
-           console.log("模擬成功", payload);
-        } else {
-           await fetch(`${WORKER_URL}/submit`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload)
-          });
-        }
-
-        // 將「已預測的當前座標」寫入 LocalStorage
-        localStorage.setItem(`predicted_${currentStorm.id}`, JSON.stringify({
-          lat: currentPos[0],
-          lng: currentPos[1]
-        }));
-
-        submitBtn.textContent = "已送出 ✓";
-        submitBtn.disabled = true;
-        checkUnlockStatus(); // 解鎖看大眾預測的按鈕！
-
-      } catch (err) {
-        alert("送出失敗，請檢查網路。");
-        submitBtn.textContent = "重新送出";
-      }
-    });
-
-    // 💡 2. 向 Worker 撈取大眾預測
-    viewOthersBtn.addEventListener('click', async () => {
-      viewOthersBtn.innerHTML = "載入中...";
-      
-      try {
-        let paths = [];
-        if(WORKER_URL.includes("YOUR_WORKER_NAME")) {
-          // 模擬假的大眾預測路線
-          paths = [
-            [[currentPos[0]+1, currentPos[1]-1], [currentPos[0]+2, currentPos[1]-2]],
-            [[currentPos[0]+1.5, currentPos[1]-0.5], [currentPos[0]+3, currentPos[1]-1]]
-          ];
-        } else {
-          const res = await fetch(`${WORKER_URL}/predictions?stormId=${currentStorm.id}&lat=${currentPos[0]}&lng=${currentPos[1]}`);
-          const data = await res.json();
-          paths = data.paths || [];
-        }
-
-        // 把別人的線畫到地圖上 (設定低透明度，製造熱力圖感)
-        paths.forEach(path => {
-          // 別人的路線起點也要連著當前颱風位置
-          const fullPath = [currentPos, ...path];
-          const crowdLine = L.polyline(fullPath, { color: '#8b5cf6', weight: 3, opacity: 0.15 }).addTo(map);
-          crowdLayers.push(crowdLine);
-        });
-
-        viewOthersBtn.innerHTML = `已載入 ${paths.length} 條預測`;
-        viewOthersBtn.disabled = true;
-
-      } catch (err) {
-        viewOthersBtn.innerHTML = "載入失敗";
-      }
-    });
-
-    mockBtn.addEventListener('click', () => {
-      activeStorms = [{ id: "TEST", cName: "測試颱風", url: "" }];
-      stormSelect.innerHTML = `<option value="0">🌀 測試颱風 (TEST)</option>`;
-      currentStorm = activeStorms[0];
-      currentPos = [20.0, 116.0];
-      resetMapLayers();
-      pastTrackLayers.push(L.marker(currentPos, { icon: L.divIcon({ className: 'typhoon-center', iconSize: [16,16], iconAnchor: [8,8] }) }).addTo(map));
-      userPathPolyline = L.polyline([currentPos], { color: '#ef4444', weight: 4 }).addTo(map);
-      checkUnlockStatus();
-    });
-
-    fetchTCList();
-  </script>
+</script>
 </body>
 </html>

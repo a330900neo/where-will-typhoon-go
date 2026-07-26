@@ -276,7 +276,7 @@
             tcNodes.forEach(node => {
                 activeTyphoons.push({
                     id: (node.querySelector("TropicalCycloneID") || node.querySelector("tropicalcycloneid"))?.textContent.trim(),
-                    name: (node.querySelector("TropicalCycloneEnglishName") || node.querySelector("tropicalcycloneenglishname"))?.textContent.trim(),
+                    name: (node.querySelector("TropicalCycloneChineseName") || node.querySelector("tropicalcycloneenglishname"))?.textContent.trim(),
                     url: (node.querySelector("TropicalCycloneURL") || node.querySelector("tropicalcycloneurl"))?.textContent.trim()
                 });
             });

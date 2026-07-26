@@ -126,7 +126,21 @@
     </div>
 
 <script>
-    // Disabled doubleClickZoom to prevent zooming when placing points quickly
+    // 🔴 CHANGE THIS TO YOUR CLOUDFLARE WORKER DEPLOYMENT URL
+    const API_BASE_URL = " https://typhoon-backend.someonechannel330.workers.dev";
+
+    // Anonymous User ID generation & retrieval
+    function getUserId() {
+        let uid = localStorage.getItem('typhoon_user_id');
+        if (!uid) {
+            uid = 'user_' + crypto.randomUUID();
+            localStorage.setItem('typhoon_user_id', uid);
+        }
+        return uid;
+    }
+    const USER_ID = getUserId();
+
+    // Map Setup
     const map = L.map('map', { zoomControl: false, doubleClickZoom: false }).setView([22.3, 114.16], 6);
     L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
         attribution: '&copy; OpenStreetMap &copy; CARTO'
@@ -135,6 +149,7 @@
     let activeTyphoons = [];
     let currentTyphoonId = null;
     let currentTyphoonLocation = null;
+    let cachedPredictions = [];
     
     let pastTrackLayer = null;
     let currentMarkerLayer = null;
@@ -145,7 +160,6 @@
     let currentCoordinates = [];
     const MAX_POINTS = 70;
 
-    const STORAGE_KEY = 'typhoon_predictions';
     const HKO_LIST_URL = "https://www.weather.gov.hk/wxinfo/currwx/tc_list.xml";
 
     const statusBar = document.getElementById('status-bar');
@@ -310,7 +324,7 @@
                 statusBar.innerText = `No current location data for ${typhoon.name}`;
             }
 
-            loadPredictions();
+            await fetchAndRenderPredictions();
 
         } catch (error) {
             console.error(error);
@@ -339,13 +353,6 @@
             return;
         }
 
-        // Check if user already submitted for THIS specific coordinate update
-        const lastSubmittedPos = localStorage.getItem(`submitted_${currentTyphoonId}`);
-        if (lastSubmittedPos === JSON.stringify(currentTyphoonLocation)) {
-            alert("You have already submitted a prediction for this update! Wait for HKO to update the typhoon's position before guessing again.");
-            return;
-        }
-
         isDrawingMode = true;
         btnDraw.style.display = 'none';
         drawControls.style.display = 'grid';
@@ -360,7 +367,7 @@
 
     btnUndo.addEventListener('click', () => {
         if (currentCoordinates.length > 1) {
-            currentCoordinates.pop(); // Remove last point
+            currentCoordinates.pop();
             currentDrawingLayer.setLatLngs(currentCoordinates);
             statusBar.innerText = `Points: ${currentCoordinates.length}/${MAX_POINTS}`;
         }
@@ -379,71 +386,92 @@
         statusBar.innerText = `Points: ${currentCoordinates.length}/${MAX_POINTS}`;
     });
 
-    btnSubmit.addEventListener('click', () => {
+    // SUBMIT PREDICTION TO BACKEND API
+    btnSubmit.addEventListener('click', async () => {
         if (currentCoordinates.length < 2) {
             alert("Please plot at least one point!");
             return;
         }
 
-        const newPrediction = {
-            id: Date.now(),
-            typhoonId: currentTyphoonId,
-            timestamp: Date.now(),
-            isMine: true,
-            coords: currentCoordinates
+        const payload = {
+            id: 'pred_' + Date.now(),
+            typhoon_id: currentTyphoonId,
+            user_id: USER_ID,
+            start_lat: currentTyphoonLocation[0],
+            start_lng: currentTyphoonLocation[1],
+            path_data: currentCoordinates,
+            timestamp: Date.now()
         };
 
-        const existing = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
-        existing.push(newPrediction);
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(existing));
-        
-        // Lock submission for this specific HKO location update
-        localStorage.setItem(`submitted_${currentTyphoonId}`, JSON.stringify(currentTyphoonLocation));
+        try {
+            statusBar.innerText = "Submitting prediction...";
+            const res = await fetch(`${API_BASE_URL}/api/submit`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
 
-        statusBar.innerText = "Prediction Saved locally!";
-        cancelDrawing();
-        loadPredictions();
+            const result = await res.json();
+
+            if (!res.ok) {
+                alert(result.error || "Submission failed");
+                statusBar.innerText = "Already submitted for this update!";
+                cancelDrawing();
+                return;
+            }
+
+            statusBar.innerText = "Prediction Submitted!";
+            cancelDrawing();
+            await fetchAndRenderPredictions();
+
+        } catch (err) {
+            console.error(err);
+            alert("Network error: Failed to submit prediction to server.");
+            statusBar.innerText = "Submission Error";
+        }
     });
 
-    function loadPredictions() {
+    // FETCH PREDICTIONS FROM BACKEND API
+    async function fetchAndRenderPredictions() {
+        if (!currentTyphoonId) return;
+
+        try {
+            const res = await fetch(`${API_BASE_URL}/api/predictions?typhoon_id=${currentTyphoonId}`);
+            if (!res.ok) throw new Error(`HTTP ${res.status}`);
+            
+            const rawData = await res.json();
+            
+            cachedPredictions = rawData.map(item => ({
+                id: item.id,
+                typhoonId: item.typhoon_id,
+                userId: item.user_id,
+                timestamp: item.timestamp,
+                isMine: item.user_id === USER_ID,
+                coords: typeof item.path_data === 'string' ? JSON.parse(item.path_data) : item.path_data
+            }));
+
+            renderPredictionsOnMap();
+
+        } catch (err) {
+            console.error("Failed to load predictions from backend:", err);
+            statusBar.innerText = "Failed to load community paths";
+        }
+    }
+
+    function renderPredictionsOnMap() {
         predictionLayers.forEach(layer => map.removeLayer(layer));
         predictionLayers = [];
-
-        let allPredictions = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
-        
-        // Generate mock data if completely empty (to simulate backend data)
-        if (allPredictions.length === 0 && currentTyphoonLocation) {
-            for(let i=0; i<3; i++) {
-                let fakeCoords = [currentTyphoonLocation];
-                let curLat = currentTyphoonLocation[0], curLng = currentTyphoonLocation[1];
-                for(let j=0; j<10; j++) {
-                    curLat += (Math.random() - 0.2) * 2;
-                    curLng -= (Math.random() - 0.2) * 2;
-                    fakeCoords.push([curLat, curLng]);
-                }
-                allPredictions.push({
-                    id: 'mock'+i,
-                    typhoonId: currentTyphoonId,
-                    timestamp: Date.now() - (Math.random() * 86400000),
-                    isMine: false,
-                    coords: fakeCoords
-                });
-            }
-            localStorage.setItem(STORAGE_KEY, JSON.stringify(allPredictions));
-        }
 
         const maxAgeHours = document.getElementById('time-filter').value;
         const cutoffTime = Date.now() - (maxAgeHours * 60 * 60 * 1000);
 
-        allPredictions.forEach(pred => {
-            if (pred.typhoonId !== currentTyphoonId) return; 
+        cachedPredictions.forEach(pred => {
             if (maxAgeHours < 72 && pred.timestamp < cutoffTime && !pred.isMine) return;
 
             const color = pred.isMine ? '#ff4757' : '#1e90ff';
             const opacity = pred.isMine ? 1 : 0.4;
             const weight = pred.isMine ? 5 : 3;
             
-            // Render from saved array. Old predictions retain their original start point.
             const line = L.polyline(pred.coords, { color: color, weight: weight, opacity: opacity }).addTo(map);
             predictionLayers.push(line);
         });
@@ -455,7 +483,7 @@
     filterInput.addEventListener('input', (e) => {
         const val = e.target.value;
         filterValLabel.innerText = (val == 72) ? "All time" : `${val} hours`;
-        loadPredictions();
+        renderPredictionsOnMap();
     });
 
     fetchTyphoonList();

@@ -361,7 +361,7 @@
     // CHECK IF USER SUBMITTED FOR CURRENT LOCATION
     function hasSubmittedForCurrentLocation() {
         if (!currentTyphoonId || !currentTyphoonLocation) return false;
-        const lastSubmittedPos = localStorage.getItem(`submit 咗${currentTyphoonId}`);
+        const lastSubmittedPos = localStorage.getItem(`落咗注 for ${currentTyphoonId}`);
         return lastSubmittedPos === JSON.stringify(currentTyphoonLocation);
     }
 

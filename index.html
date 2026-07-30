@@ -128,7 +128,7 @@
 <body>
 
     <div id="top-bar">
-        <div id="status-bar">Connecting to HKO...</div>
+        <div id="status-bar">揾緊風...</div>
         <select id="typhoon-selector"></select>
     </div>
     
@@ -268,7 +268,7 @@
             const tcNodes = listXml.querySelectorAll("TropicalCyclone, tropicalcyclone");
             
             if (tcNodes.length === 0) {
-                statusBar.innerText = "No active typhoons currently.";
+                statusBar.innerText = "唔洗諗住打風";
                 return;
             }
 
@@ -303,7 +303,7 @@
 
         } catch (error) {
             console.error(error);
-            statusBar.innerText = "Error loading HKO list";
+            statusBar.innerText = "(error)唔知唔知";
         }
     }
 
@@ -354,14 +354,14 @@
 
         } catch (error) {
             console.error(error);
-            statusBar.innerText = `Failed to load ${typhoon.name} track`;
+            statusBar.innerText = `唔知 ${typhoon.name} 會去邊(error)`;
         }
     }
 
     // CHECK IF USER SUBMITTED FOR CURRENT LOCATION
     function hasSubmittedForCurrentLocation() {
         if (!currentTyphoonId || !currentTyphoonLocation) return false;
-        const lastSubmittedPos = localStorage.getItem(`submitted_${currentTyphoonId}`);
+        const lastSubmittedPos = localStorage.getItem(`submit 咗${currentTyphoonId}`);
         return lastSubmittedPos === JSON.stringify(currentTyphoonLocation);
     }
 
@@ -382,7 +382,7 @@
 
     btnDraw.addEventListener('click', () => {
         if (!currentTyphoonLocation) {
-            alert("Waiting for typhoon location to load...");
+            alert("Wait");
             return;
         }
 
@@ -415,7 +415,7 @@
         if (!isDrawingMode) return;
         
         if (currentCoordinates.length >= MAX_POINTS) {
-            statusBar.innerText = "Max points reached! Please submit.";
+            statusBar.innerText = "唔好再擺point la, submit la.";
             return;
         }
         
@@ -426,7 +426,7 @@
 
     btnSubmit.addEventListener('click', async () => {
         if (currentCoordinates.length < 2) {
-            alert("Please plot at least one point!");
+            alert("no point no submit");
             return;
         }
 
@@ -441,7 +441,7 @@
         };
 
         try {
-            statusBar.innerText = "Submitting prediction...";
+            statusBar.innerText = "Submitting";
             const res = await fetch(`${API_BASE_URL}/api/submit`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -452,15 +452,15 @@
 
             if (!res.ok) {
                 alert(result.error || "Submission failed");
-                statusBar.innerText = "submit咗";
+                statusBar.innerText = "submit唔到";
                 cancelDrawing();
                 return;
             }
 
             // Lock submission for this specific location
-            localStorage.setItem(`submitted_${currentTyphoonId}`, JSON.stringify(currentTyphoonLocation));
+            localStorage.setItem(`落咗注 for ${currentTyphoonId}`, JSON.stringify(currentTyphoonLocation));
 
-            statusBar.innerText = "Prediction Submitted!";
+            statusBar.innerText = "落咗注";
             cancelDrawing();
             await fetchAndRenderPredictions();
 

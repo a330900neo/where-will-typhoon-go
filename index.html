@@ -311,7 +311,7 @@
         if (!typhoon || !typhoon.url) return;
         
         try {
-            statusBar.innerText = `Loading track: ${typhoon.name}...`;
+            statusBar.innerText = `stalk緊 ${typhoon.name}...`;
             currentTyphoonId = typhoon.id;
 
             if (pastTrackLayer) map.removeLayer(pastTrackLayer);
@@ -345,9 +345,9 @@
                 }).addTo(map).bindPopup(`${typhoon.name} (Current)`).openPopup();
                 
                 map.setView(currentTyphoonLocation, 5);
-                statusBar.innerText = `Tracking: ${typhoon.name}`;
+                statusBar.innerText = `颱風: ${typhoon.name}`;
             } else {
-                statusBar.innerText = `No current location data for ${typhoon.name}`;
+                statusBar.innerText = `stalk唔到${typhoon.name}`;
             }
 
             await fetchAndRenderPredictions();
@@ -377,7 +377,7 @@
         drawControls.style.display = 'none';
         currentCoordinates = [];
         if (currentDrawingLayer) map.removeLayer(currentDrawingLayer);
-        statusBar.innerText = currentTyphoonId ? `Tracking active` : 'Connected';
+        statusBar.innerText = currentTyphoonId ? `有風` : '有颱風冇風？唔係靠彩數!';
     }
 
     btnDraw.addEventListener('click', () => {

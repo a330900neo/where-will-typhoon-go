@@ -377,7 +377,7 @@
         drawControls.style.display = 'none';
         currentCoordinates = [];
         if (currentDrawingLayer) map.removeLayer(currentDrawingLayer);
-        statusBar.innerText = currentTyphoonId ? `有風` : '有颱風冇風？唔係靠彩數!';
+        statusBar.innerText = currentTyphoonId ? `有風` : '打到打唔到？唔係靠彩數!';
     }
 
     btnDraw.addEventListener('click', () => {

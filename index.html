@@ -263,7 +263,7 @@
 
     async function fetchTyphoonList() {
         try {
-            statusBar.innerText = "Connecting to HKO...";
+            statusBar.innerText = "揾緊風...";
             const listXml = await fetchXMLWithFallback(HKO_LIST_URL);
             const tcNodes = listXml.querySelectorAll("TropicalCyclone, tropicalcyclone");
             

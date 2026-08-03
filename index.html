@@ -4,79 +4,96 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     
-    <!-- Title & Social Media Embed Meta Tags -->
+    <!-- Title & Meta Tags -->
     <title>颱風會去邊</title>
     <meta name="description" content="一齊估下颱風會去邊">
-    
     <meta property="og:title" content="颱風會去邊">
     <meta property="og:description" content="一齊估下颱風會去邊">
     <meta property="og:image" content="icon.png">
     <meta property="og:type" content="website">
-    
-    <meta name="twitter:card" content="summary_large_image">
-    <meta name="twitter:title" content="颱風會去邊">
-    <meta name="twitter:description" content="一齊估下颱風會去邊">
-    <meta name="twitter:image" content="icon.png">
     
     <link rel="icon" href="icon.png">
     
     <!-- Leaflet CSS & JS -->
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    
+    <!-- Google Identity Services -->
+    <script src="https://accounts.google.com/gsi/client" async defer></script>
 
     <style>
-        body { margin: 0; padding: 0; font-family: sans-serif; overflow: hidden; background: #f4f4f4; }
-        #map { height: 100vh; width: 100vw; z-index: 1; }
-        
-        #ui-container {
+        :root {
+            --bg-glass: rgba(20, 20, 25, 0.75);
+            --bg-glass-light: rgba(255, 255, 255, 0.95);
+            --border-glass: rgba(255, 255, 255, 0.18);
+            --primary-accent: #ff4757;
+            --success-accent: #2ed573;
+            --warning-accent: #ffa502;
+            --secondary-accent: #747d8c;
+            --text-light: #ffffff;
+            --text-dark: #2f3542;
+            --radius-main: 16px;
+            --shadow-main: 0 8px 32px 0 rgba(0, 0, 0, 0.3);
+        }
+
+        * {
+            box-sizing: border-box;
+            user-select: none;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        body, html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            background: #eef2f3;
+        }
+
+        #map {
+            height: 100vh;
+            width: 100vw;
+            z-index: 1;
+        }
+
+        .map-drawing-mode { cursor: crosshair !important; }
+
+        .glass-panel {
+            background: var(--bg-glass);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid var(--border-glass);
+            box-shadow: var(--shadow-main);
+            border-radius: var(--radius-main);
+            color: var(--text-light);
+            transition: all 0.3s ease;
+        }
+
+        /* Top Left Login Button */
+        #btn-top-login {
             position: absolute;
-            bottom: 20px;
-            left: 50%;
-            transform: translateX(-50%);
-            z-index: 1000;
-            background: rgba(0, 0, 0, 0.85);
-            color: white;
-            padding: 15px;
-            border-radius: 12px;
-            width: 90%;
-            max-width: 400px;
-            box-shadow: 0 4px 15px rgba(0,0,0,0.5);
-            display: flex;
-            flex-direction: column;
-            gap: 10px;
-        }
-
-        .btn {
-            padding: 12px;
-            border: none;
-            border-radius: 8px;
-            font-size: 16px;
-            font-weight: bold;
-            cursor: pointer;
-            text-align: center;
-        }
-        
-        #btn-draw { background: #ff4757; color: white; }
-        
-        .draw-controls {
-            display: none;
-            grid-template-columns: 1fr 1fr;
-            gap: 10px;
-        }
-        
-        #btn-submit { background: #2ed573; color: white; grid-column: span 2; }
-        #btn-undo { background: #ffa502; color: white; }
-        #btn-cancel { background: #747d8c; color: white; }
-
-        .filter-container {
-            display: flex;
-            flex-direction: column;
-            gap: 5px;
+            top: 20px;
+            left: 20px;
+            z-index: 1001;
+            padding: 10px 16px;
             font-size: 14px;
+            font-weight: 700;
+            cursor: pointer;
+            border: 1px solid var(--border-glass);
+            border-radius: 12px;
+            background: var(--bg-glass-light);
+            color: var(--text-dark);
+            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+            transition: transform 0.1s ease;
+            display: flex;
+            align-items: center;
+            gap: 6px;
         }
+        #btn-top-login:active { transform: scale(0.95); }
 
-        input[type=range] { width: 100%; }
-
+        /* Top Control Bar */
         #top-bar {
             position: absolute;
             top: 20px;
@@ -88,64 +105,183 @@
             gap: 10px;
             align-items: center;
             width: 90%;
-            max-width: 350px;
+            max-width: 380px;
+            pointer-events: none; /* Let clicks pass through if needed */
         }
 
         #status-bar {
-            background: rgba(255, 255, 255, 0.95);
-            color: #333;
-            padding: 8px 16px;
-            border-radius: 20px;
-            font-weight: bold;
+            background: var(--bg-glass-light);
+            color: var(--text-dark);
+            padding: 10px 20px;
+            border-radius: 30px;
+            font-weight: 700;
+            font-size: 15px;
             text-align: center;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.2);
             width: 100%;
-            box-sizing: border-box;
+            border: 1px solid rgba(255, 255, 255, 0.4);
+            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+            pointer-events: auto;
         }
 
         #typhoon-selector {
-            padding: 8px;
-            border-radius: 8px;
-            font-size: 16px;
-            font-weight: bold;
-            border: none;
-            background: white;
-            color: #333;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+            padding: 10px 14px;
+            border-radius: 12px;
+            font-size: 15px;
+            font-weight: 600;
+            border: 1px solid var(--border-glass);
+            background: var(--bg-glass-light);
+            color: var(--text-dark);
             width: 100%;
             display: none;
-        }
-        
-        #community-lock-msg {
-            color: #ffa502;
-            font-size: 13px;
-            text-align: center;
-            font-weight: bold;
-            display: none;
+            outline: none;
+            cursor: pointer;
+            pointer-events: auto;
         }
 
-        /* Low Pressure "L" Marker Styling */
-        .lp-icon {
-            width: 22px;
-            height: 22px;
-            background-color: #000000;
-            border-radius: 50%;
+        /* Bottom UI Container */
+        #ui-container {
+            position: absolute;
+            bottom: 24px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 1000;
+            padding: 16px;
+            width: 90%;
+            max-width: 400px;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .btn {
+            padding: 14px;
+            border: none;
+            border-radius: 10px;
+            font-size: 16px;
+            font-weight: 700;
+            cursor: pointer;
+            text-align: center;
+            transition: transform 0.1s ease, opacity 0.2s ease;
             display: flex;
             align-items: center;
             justify-content: center;
-            color: transparent;
-            -webkit-text-stroke: 1.5px #ffffff;
-            font-weight: 900;
-            font-size: 13px;
-            font-family: Arial, sans-serif;
-            border: 1px solid #ffffff;
-            box-shadow: 0 0 4px rgba(0,0,0,0.5);
-            box-sizing: border-box;
+            gap: 6px;
         }
+
+        .btn:active { transform: scale(0.97); }
+        #btn-draw { background: var(--primary-accent); color: white; }
+        .draw-controls { display: none; grid-template-columns: 1fr 1fr; gap: 10px; }
+        #btn-submit { background: var(--success-accent); color: white; grid-column: span 2; }
+        #btn-undo { background: var(--warning-accent); color: white; }
+        #btn-cancel { background: var(--secondary-accent); color: white; }
+
+        .filter-container {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            font-size: 13px;
+            font-weight: 500;
+            padding-top: 4px;
+            border-top: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        input[type=range] { width: 100%; accent-color: var(--primary-accent); cursor: pointer; }
+
+        #community-lock-msg {
+            color: var(--warning-accent);
+            font-size: 13px;
+            text-align: center;
+            font-weight: 700;
+            display: none;
+            padding: 4px 0;
+        }
+
+        /* Marker Styles */
+        .lp-icon {
+            width: 22px; height: 22px; background-color: #000000; border-radius: 50%;
+            display: flex; align-items: center; justify-content: center; color: transparent;
+            -webkit-text-stroke: 1.5px #ffffff; font-weight: 900; font-size: 13px;
+            font-family: Arial, sans-serif; border: 1px solid #ffffff; box-shadow: 0 0 6px rgba(0,0,0,0.4);
+        }
+
+        .typhoon-pulse-marker {
+            width: 16px; height: 16px; background: #ff4757; border: 2px solid #ffffff;
+            border-radius: 50%; box-shadow: 0 0 8px rgba(255, 71, 87, 0.8); position: relative;
+        }
+        .typhoon-pulse-marker::after {
+            content: ''; position: absolute; width: 100%; height: 100%; top: -2px; left: -2px;
+            border-radius: 50%; border: 2px solid #ff4757;
+            animation: pulse-ring 1.5s cubic-bezier(0.215, 0.61, 0.355, 1) infinite;
+        }
+        @keyframes pulse-ring {
+            0% { transform: scale(0.9); opacity: 1; }
+            100% { transform: scale(2.6); opacity: 0; }
+        }
+
+        /* --- AUTH OVERLAY STYLES --- */
+        #auth-overlay {
+            position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
+            background: rgba(0, 0, 0, 0.7);
+            backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+            z-index: 9999; display: none; align-items: center; justify-content: center;
+        }
+        .auth-panel {
+            background: var(--bg-glass-light);
+            padding: 32px 24px; border-radius: var(--radius-main);
+            box-shadow: var(--shadow-main); width: 90%; max-width: 340px;
+            text-align: center; color: var(--text-dark); position: relative;
+        }
+        .close-auth-btn {
+            position: absolute; top: 12px; right: 16px; font-size: 20px; font-weight: bold;
+            color: #999; cursor: pointer; padding: 4px;
+        }
+        .auth-panel h2 { margin: 0 0 8px 0; font-size: 22px; }
+        .auth-panel p { margin: 0 0 24px 0; font-size: 14px; color: #666; }
+        
+        #google-btn-container { display: flex; justify-content: center; width: 100%; }
+        
+        #username-setup { display: none; margin-top: 10px; }
+        #username-input {
+            width: 100%; padding: 14px; margin-bottom: 16px;
+            border-radius: 10px; border: 1px solid #ccc;
+            font-size: 16px; outline: none; text-align: center;
+            user-select: text;
+        }
+        #btn-save-username { background: var(--success-accent); color: white; width: 100%; }
     </style>
 </head>
 <body>
 
+    <!-- Optional Top Left Login Trigger -->
+    <button id="btn-top-login">👤 登入</button>
+
+    <!-- Auth Overlay (Optional) -->
+    <div id="auth-overlay">
+        <div class="auth-panel">
+            <span class="close-auth-btn" id="close-auth">✖</span>
+            <h2 id="auth-title">登入 / Login</h2>
+            <p id="auth-desc">登入即可解除 6 小時發佈冷卻時間限制</p>
+            
+            <!-- Google Sign-In Setup -->
+            <div id="g_id_onload"
+                 data-client_id="848668931991-smd16mnf0hripqncg6dajp4i0c9l1qnl.apps.googleusercontent.com"
+                 data-callback="handleGoogleLogin"
+                 data-auto_prompt="false">
+            </div>
+            
+            <div id="google-btn-container">
+                <div class="g_id_signin" data-type="standard" data-shape="rectangular" data-theme="outline" data-text="signin_with" data-size="large" data-logo_alignment="left"></div>
+            </div>
+
+            <!-- Username Setup (Hidden until authenticated) -->
+            <div id="username-setup">
+                <input type="text" id="username-input" placeholder="改個名 / Choose Username" maxlength="15">
+                <button id="btn-save-username" class="btn">儲存並進入 🚀</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Main Map App -->
     <div id="top-bar">
         <div id="status-bar">揾緊風...</div>
         <select id="typhoon-selector"></select>
@@ -153,7 +289,7 @@
     
     <div id="map"></div>
     
-    <div id="ui-container">
+    <div id="ui-container" class="glass-panel">
         <button id="btn-draw" class="btn">✏️ 點擊去估</button>
         
         <div id="draw-controls" class="draw-controls">
@@ -162,29 +298,88 @@
             <button id="btn-submit" class="btn">🚀 發佈預測</button>
         </div>
         
-        <div id="community-lock-msg">發佈自己點估咗先睇到其他</div>
+        <div id="community-lock-msg">🔒 發佈自己點估咗先睇到其他</div>
         
         <div class="filter-container" id="filter-wrapper">
-            <label for="time-filter">Show大家最近X嘅預測: <span id="filter-val">All time</span></label>
+            <label for="time-filter">Show大家最近預測: <span id="filter-val" style="font-weight:700; color:var(--primary-accent);">All time</span></label>
             <input type="range" id="time-filter" min="1" max="72" value="72">
         </div>
     </div>
 
 <script>
-    // 🔴 CHANGE THIS TO YOUR CLOUDFLARE WORKER DEPLOYMENT URL
     const API_BASE_URL = "https://typhoon-backend.someonechannel330.workers.dev";
+    const HKO_LIST_URL = "https://www.weather.gov.hk/wxinfo/currwx/tc_list.xml";
+    const MAX_POINTS = 70;
 
+    // --- Authentication & User State ---
+    
+    // Assign ID automatically. If not logged in, generate anonymous ID.
     function getUserId() {
         let uid = localStorage.getItem('typhoon_user_id');
         if (!uid) {
-            uid = 'user_' + crypto.randomUUID();
+            uid = 'anon_' + crypto.randomUUID();
             localStorage.setItem('typhoon_user_id', uid);
         }
         return uid;
     }
-    const USER_ID = getUserId();
+    
+    let USER_ID = getUserId();
+    let USERNAME = localStorage.getItem('typhoon_username') || null;
+    let tempGoogleSub = null;
 
-    // Helper to generate Low Pressure "L" Icon
+    // UI Initializer for Auth button
+    function updateAuthUI() {
+        const topBtn = document.getElementById('btn-top-login');
+        if (USERNAME) {
+            topBtn.innerHTML = `👤 ${USERNAME}`;
+            topBtn.style.pointerEvents = 'none'; // Prevent re-login clicking once authenticated
+        }
+    }
+    updateAuthUI();
+
+    // Open & Close Modal
+    document.getElementById('btn-top-login').addEventListener('click', () => {
+        document.getElementById('auth-overlay').style.display = 'flex';
+    });
+    document.getElementById('close-auth').addEventListener('click', () => {
+        document.getElementById('auth-overlay').style.display = 'none';
+    });
+
+    // Google Callback
+    window.handleGoogleLogin = function(response) {
+        const base64Url = response.credential.split('.')[1];
+        const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
+        const payload = JSON.parse(window.atob(base64));
+        
+        tempGoogleSub = payload.sub; // The unique Google account ID[cite: 2]
+
+        document.getElementById('google-btn-container').style.display = 'none';
+        document.getElementById('auth-title').innerText = "最後一步";
+        document.getElementById('auth-desc').innerText = "為你嘅預測改個名";
+        document.getElementById('username-setup').style.display = 'block';
+    };
+
+    // Save Username
+    document.getElementById('btn-save-username').addEventListener('click', () => {
+        const inputName = document.getElementById('username-input').value.trim();
+        if (!inputName) {
+            alert("請輸入一個名！(Please enter a username)");
+            return;
+        }
+
+        // Save authenticated state to device[cite: 2]
+        localStorage.setItem('typhoon_user_id', tempGoogleSub);
+        localStorage.setItem('typhoon_username', inputName);
+        
+        USER_ID = tempGoogleSub;
+        USERNAME = inputName;
+        
+        updateAuthUI();
+        document.getElementById('auth-overlay').style.display = 'none';
+    });
+
+
+    // --- Leaflet Map Setup ---
     function createLPIcon(opacity = 1) {
         return L.divIcon({
             className: 'lp-marker-container',
@@ -194,12 +389,25 @@
         });
     }
 
-    // Map Setup (Switched to Bright Theme 'light_all')
-    const map = L.map('map', { zoomControl: false, doubleClickZoom: false }).setView([22.3, 114.16], 6);
+    function createTyphoonIcon() {
+        return L.divIcon({
+            className: 'typhoon-pulse-container',
+            html: `<div class="typhoon-pulse-marker"></div>`,
+            iconSize: [16, 16],
+            iconAnchor: [8, 8]
+        });
+    }
+
+    const map = L.map('map', { 
+        zoomControl: false, 
+        doubleClickZoom: false 
+    }).setView([22.3, 114.16], 6);
+
     L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
         attribution: '&copy; OpenStreetMap &copy; CARTO'
     }).addTo(map);
 
+    // --- App State ---
     let activeTyphoons = [];
     let currentTyphoonId = null;
     let currentTyphoonLocation = null;
@@ -213,15 +421,22 @@
 
     let isDrawingMode = false;
     let currentCoordinates = [];
-    const MAX_POINTS = 70;
 
-    const HKO_LIST_URL = "https://www.weather.gov.hk/wxinfo/currwx/tc_list.xml";
-
+    // DOM Elements
+    const mapElement = document.getElementById('map');
     const statusBar = document.getElementById('status-bar');
     const typhoonSelector = document.getElementById('typhoon-selector');
     const filterWrapper = document.getElementById('filter-wrapper');
     const communityLockMsg = document.getElementById('community-lock-msg');
+    const btnDraw = document.getElementById('btn-draw');
+    const drawControls = document.getElementById('draw-controls');
+    const btnUndo = document.getElementById('btn-undo');
+    const btnCancel = document.getElementById('btn-cancel');
+    const btnSubmit = document.getElementById('btn-submit');
+    const filterInput = document.getElementById('time-filter');
+    const filterValLabel = document.getElementById('filter-val');
 
+    // --- Network Utilities ---
     async function fetchWithTimeout(url, timeoutMs = 5000) {
         const controller = new AbortController();
         const id = setTimeout(() => controller.abort(), timeoutMs);
@@ -278,7 +493,6 @@
                 
                 const parser = new DOMParser();
                 let doc = parser.parseFromString(text, "text/xml");
-                
                 if (doc.querySelector("parsererror")) {
                     doc = parser.parseFromString(text, "text/html");
                 }
@@ -288,9 +502,10 @@
                 console.warn(`Attempt ${i + 1} failed:`, err.message);
             }
         }
-        throw new Error("All fetching methods failed or timed out.");
+        throw new Error("All fetching methods failed.");
     }
 
+    // --- Typhoon Data & Map Logic ---
     async function fetchTyphoonList() {
         try {
             statusBar.innerText = "揾緊風...";
@@ -298,7 +513,7 @@
             const tcNodes = listXml.querySelectorAll("TropicalCyclone, tropicalcyclone");
             
             if (tcNodes.length === 0) {
-                statusBar.innerText = "唔洗諗住打風";
+                statusBar.innerText = "唔洗諗住打風 (暫無熱帶氣旋)";
                 return;
             }
 
@@ -333,7 +548,7 @@
 
         } catch (error) {
             console.error(error);
-            statusBar.innerText = "(error)唔知唔知";
+            statusBar.innerText = "讀取資料失敗 (Error)";
         }
     }
 
@@ -362,7 +577,12 @@
             });
 
             if (pastCoords.length > 0) {
-                pastTrackLayer = L.polyline(pastCoords, { color: '#444', weight: 4, dashArray: '5, 10' }).addTo(map);
+                pastTrackLayer = L.polyline(pastCoords, { 
+                    color: '#2f3542', 
+                    weight: 3, 
+                    dashArray: '6, 8',
+                    opacity: 0.7 
+                }).addTo(map);
             }
 
             const analysisNode = trackXml.querySelector("AnalysisInformation") || trackXml.querySelector("analysisinformation");
@@ -370,22 +590,23 @@
                 const lat = parseFloat((analysisNode.querySelector("Latitude") || analysisNode.querySelector("latitude")).textContent.trim());
                 const lon = parseFloat((analysisNode.querySelector("Longitude") || analysisNode.querySelector("longitude")).textContent.trim());
                 
-                // Read Intensity and Maximum Wind speed
                 const intensity = (analysisNode.querySelector("Intensity") || analysisNode.querySelector("intensity"))?.textContent.trim() || '';
                 const wind = (analysisNode.querySelector("MaximumWind") || analysisNode.querySelector("maximumwind"))?.textContent.trim() || '';
 
                 currentTyphoonLocation = [lat, lon];
                 
-                let popupContent = `<b>${typhoon.name}</b>`;
+                let popupContent = `<div style="font-size:14px; text-align:center;"><b>${typhoon.name}</b>`;
                 if (intensity || wind) {
-                    popupContent += `<br>${intensity} ${wind ? '| 風速: ' + wind : ''}`;
+                    popupContent += `<br><span style="font-size:12px; color:#666;">${intensity} ${wind ? '| 風速: ' + wind : ''}</span>`;
                 }
+                popupContent += `</div>`;
 
-                currentMarkerLayer = L.circleMarker(currentTyphoonLocation, {
-                    color: 'red', fillColor: '#f03', fillOpacity: 1, radius: 8
-                }).addTo(map).bindPopup(popupContent).openPopup();
+                currentMarkerLayer = L.marker(currentTyphoonLocation, { icon: createTyphoonIcon() })
+                    .addTo(map)
+                    .bindPopup(popupContent)
+                    .openPopup();
                 
-                map.setView(currentTyphoonLocation, 5);
+                map.setView(currentTyphoonLocation, 6);
 
                 let statusInfo = `颱風: ${typhoon.name}`;
                 if (intensity || wind) {
@@ -393,38 +614,35 @@
                 }
                 statusBar.innerText = statusInfo;
             } else {
-                statusBar.innerText = `stalk唔到${typhoon.name}`;
+                statusBar.innerText = `stalk唔到 ${typhoon.name}`;
             }
 
             await fetchAndRenderPredictions();
 
         } catch (error) {
             console.error(error);
-            statusBar.innerText = `唔知 ${typhoon.name} 會去邊(error)`;
+            statusBar.innerText = `唔知 ${typhoon.name} 會去邊 (Error)`;
         }
     }
 
-    // CHECK IF USER SUBMITTED FOR CURRENT LOCATION
     function hasSubmittedForCurrentLocation() {
         if (!currentTyphoonId || !currentTyphoonLocation) return false;
         const lastSubmittedPos = localStorage.getItem(`落咗注 for ${currentTyphoonId}`);
         return lastSubmittedPos === JSON.stringify(currentTyphoonLocation);
     }
 
-    const btnDraw = document.getElementById('btn-draw');
-    const drawControls = document.getElementById('draw-controls');
-    const btnUndo = document.getElementById('btn-undo');
-    const btnCancel = document.getElementById('btn-cancel');
-    const btnSubmit = document.getElementById('btn-submit');
-
+    // --- Drawing Path Logic ---
     function updateDrawingLayers() {
         if (currentDrawingLayer) map.removeLayer(currentDrawingLayer);
         if (drawingLastPointMarker) map.removeLayer(drawingLastPointMarker);
 
         if (currentCoordinates.length > 0) {
-            currentDrawingLayer = L.polyline(currentCoordinates, { color: '#ff4757', weight: 5 }).addTo(map);
+            currentDrawingLayer = L.polyline(currentCoordinates, { 
+                color: 'var(--primary-accent)', 
+                weight: 4,
+                lineCap: 'round'
+            }).addTo(map);
             
-            // Draw Low Pressure "L" icon on the latest point drawn
             if (currentCoordinates.length > 1) {
                 const lastPt = currentCoordinates[currentCoordinates.length - 1];
                 drawingLastPointMarker = L.marker(lastPt, { icon: createLPIcon(1) }).addTo(map);
@@ -434,30 +652,52 @@
 
     function cancelDrawing() {
         isDrawingMode = false;
-        btnDraw.style.display = 'block';
+        mapElement.classList.remove('map-drawing-mode');
+        btnDraw.style.display = 'flex';
         drawControls.style.display = 'none';
         currentCoordinates = [];
         if (currentDrawingLayer) map.removeLayer(currentDrawingLayer);
         if (drawingLastPointMarker) map.removeLayer(drawingLastPointMarker);
-        statusBar.innerText = currentTyphoonId ? `有風` : '打到打唔到？唔係靠彩數!';
+        
+        const tcName = activeTyphoons.find(t => t.id === currentTyphoonId)?.name;
+        statusBar.innerText = tcName ? `颱風: ${tcName}` : '打到打唔到？唔係靠彩數!';
     }
 
     btnDraw.addEventListener('click', () => {
         if (!currentTyphoonLocation) {
-            alert("Wait");
+            alert("請等待颱風資料載入完成");
             return;
         }
 
-        if (hasSubmittedForCurrentLocation()) {
-            alert("你submit咗，等下次天文台update position先再估啦");
-            return;
+        // Auth Checking & Rate Limiting Check
+        const isAnon = !USERNAME;
+        
+        if (isAnon) {
+            const lastAnonPost = localStorage.getItem('anon_last_post_time');
+            if (lastAnonPost) {
+                const timeDiff = Date.now() - parseInt(lastAnonPost);
+                const cooldownMs = 6 * 60 * 60 * 1000; // 6 hours in milliseconds
+                
+                if (timeDiff < cooldownMs) {
+                    const hoursLeft = Math.ceil((cooldownMs - timeDiff) / (1000 * 60 * 60));
+                    alert(`訪客每 6 小時只可預測一次 (仲要等約 ${hoursLeft} 小時)。\n\n點擊左上角「登入」即可解除限制 (每次更新位置可估一次)！`);
+                    return;
+                }
+            }
+        } else {
+            // Logged in users follow standard restriction (once per position update)
+            if (hasSubmittedForCurrentLocation()) {
+                alert("你已發佈過預測，等下次天文台更新位置先可以再估！");
+                return;
+            }
         }
 
         isDrawingMode = true;
+        mapElement.classList.add('map-drawing-mode');
         btnDraw.style.display = 'none';
         drawControls.style.display = 'grid';
         currentCoordinates = [currentTyphoonLocation];
-        statusBar.innerText = `Points: 1/${MAX_POINTS}`;
+        statusBar.innerText = `點擊地圖畫線: 1/${MAX_POINTS}`;
         
         updateDrawingLayers();
     });
@@ -468,7 +708,7 @@
         if (currentCoordinates.length > 1) {
             currentCoordinates.pop();
             updateDrawingLayers();
-            statusBar.innerText = `Points: ${currentCoordinates.length}/${MAX_POINTS}`;
+            statusBar.innerText = `點擊地圖畫線: ${currentCoordinates.length}/${MAX_POINTS}`;
         }
     });
 
@@ -476,18 +716,19 @@
         if (!isDrawingMode) return;
         
         if (currentCoordinates.length >= MAX_POINTS) {
-            statusBar.innerText = "唔好再擺point la, submit la.";
+            statusBar.innerText = "已達到最高點數上限，請發佈預測！";
             return;
         }
         
         currentCoordinates.push([e.latlng.lat, e.latlng.lng]);
         updateDrawingLayers();
-        statusBar.innerText = `Points: ${currentCoordinates.length}/${MAX_POINTS}`;
+        statusBar.innerText = `點擊地圖畫線: ${currentCoordinates.length}/${MAX_POINTS}`;
     });
 
+    // --- Submit Prediction ---
     btnSubmit.addEventListener('click', async () => {
         if (currentCoordinates.length < 2) {
-            alert("no point no submit");
+            alert("請至少在地圖上記錄一個方向點");
             return;
         }
 
@@ -495,6 +736,7 @@
             id: 'pred_' + Date.now(),
             typhoon_id: currentTyphoonId,
             user_id: USER_ID,
+            username: USERNAME || "訪客", // Mark as guest if anon
             start_lat: currentTyphoonLocation[0],
             start_lng: currentTyphoonLocation[1],
             path_data: currentCoordinates,
@@ -502,7 +744,7 @@
         };
 
         try {
-            statusBar.innerText = "Submitting";
+            statusBar.innerText = "發佈中...";
             const res = await fetch(`${API_BASE_URL}/api/submit`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -512,33 +754,51 @@
             const result = await res.json();
 
             if (!res.ok) {
-                alert(result.error || "Submission failed");
-                statusBar.innerText = "submit唔到";
+                alert(result.error || "發佈失敗");
+                statusBar.innerText = "發佈失敗";
                 cancelDrawing();
                 return;
             }
 
-            // Lock submission for this specific location
+            // Record constraints upon successful post
+            if (!USERNAME) {
+                localStorage.setItem('anon_last_post_time', Date.now().toString());
+            }
             localStorage.setItem(`落咗注 for ${currentTyphoonId}`, JSON.stringify(currentTyphoonLocation));
 
-            statusBar.innerText = "落咗注";
+            statusBar.innerText = "成功發佈預測！";
             cancelDrawing();
             await fetchAndRenderPredictions();
 
         } catch (err) {
             console.error(err);
-            alert("Network error: Failed to submit prediction to server.");
-            statusBar.innerText = "Submission Error";
+            alert("網路錯誤：未能連接至伺服器發佈預測。");
+            statusBar.innerText = "發佈發生錯誤";
         }
     });
 
+    // --- Community Predictions Rendering ---
     async function fetchAndRenderPredictions() {
         if (!currentTyphoonId) return;
 
-        // Verify if user is allowed to view community predictions
-        if (!hasSubmittedForCurrentLocation()) {
+        // Check view restrictions (Anon 6-hour delay check OR position lock)
+        const isAnon = !USERNAME;
+        let isLockedOut = false;
+        
+        if (isAnon) {
+            const lastAnonPost = localStorage.getItem('anon_last_post_time');
+            if (!lastAnonPost || (Date.now() - parseInt(lastAnonPost)) > (6 * 60 * 60 * 1000)) {
+                isLockedOut = true;
+            }
+        } else {
+            if (!hasSubmittedForCurrentLocation()) {
+                isLockedOut = true;
+            }
+        }
+
+        if (isLockedOut) {
             cachedPredictions = [];
-            renderPredictionsOnMap(); // Clear map
+            renderPredictionsOnMap();
             filterWrapper.style.display = 'none';
             communityLockMsg.style.display = 'block';
             return;
@@ -547,7 +807,7 @@
         try {
             filterWrapper.style.display = 'flex';
             communityLockMsg.style.display = 'none';
-            statusBar.innerText = "Load緊大家點估";
+            statusBar.innerText = "載入大家嘅預測中...";
 
             const res = await fetch(`${API_BASE_URL}/api/predictions?typhoon_id=${currentTyphoonId}`);
             if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -563,12 +823,13 @@
                 coords: typeof item.path_data === 'string' ? JSON.parse(item.path_data) : item.path_data
             }));
 
-            statusBar.innerText = `Tracking: ${activeTyphoons.find(t => t.id === currentTyphoonId)?.name || 'Active'}`;
+            const tcName = activeTyphoons.find(t => t.id === currentTyphoonId)?.name;
+            statusBar.innerText = `颱風: ${tcName || '已載入'}`;
             renderPredictionsOnMap();
 
         } catch (err) {
-            console.error("Failed to load predictions from backend:", err);
-            statusBar.innerText = "load 唔到";
+            console.error("Failed to load community predictions:", err);
+            statusBar.innerText = "未能載入其他人嘅預測";
         }
     }
 
@@ -576,20 +837,25 @@
         predictionLayers.forEach(layer => map.removeLayer(layer));
         predictionLayers = [];
 
-        const maxAgeHours = document.getElementById('time-filter').value;
+        const maxAgeHours = filterInput.value;
         const cutoffTime = Date.now() - (maxAgeHours * 60 * 60 * 1000);
 
         cachedPredictions.forEach(pred => {
             if (maxAgeHours < 72 && pred.timestamp < cutoffTime && !pred.isMine) return;
 
             const color = pred.isMine ? '#ff4757' : '#1e90ff';
-            const opacity = pred.isMine ? 1 : 0.4;
-            const weight = pred.isMine ? 5 : 3;
+            const opacity = pred.isMine ? 1 : 0.45;
+            const weight = pred.isMine ? 4 : 2.5;
             
-            const line = L.polyline(pred.coords, { color: color, weight: weight, opacity: opacity }).addTo(map);
+            const line = L.polyline(pred.coords, { 
+                color: color, 
+                weight: weight, 
+                opacity: opacity,
+                lineCap: 'round'
+            }).addTo(map);
+            
             predictionLayers.push(line);
 
-            // Add Low Pressure "L" marker to the end of each rendered prediction line
             if (pred.coords && pred.coords.length > 1) {
                 const lastPt = pred.coords[pred.coords.length - 1];
                 const lpMarker = L.marker(lastPt, { icon: createLPIcon(opacity) }).addTo(map);
@@ -598,15 +864,13 @@
         });
     }
 
-    const filterInput = document.getElementById('time-filter');
-    const filterValLabel = document.getElementById('filter-val');
-
     filterInput.addEventListener('input', (e) => {
         const val = e.target.value;
-        filterValLabel.innerText = (val == 72) ? "All time" : `${val} hours`;
+        filterValLabel.innerText = (val == 72) ? "All time" : `${val} 小時內`;
         renderPredictionsOnMap();
     });
 
+    // Boot App
     fetchTyphoonList();
 
 </script>

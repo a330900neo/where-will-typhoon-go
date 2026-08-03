@@ -192,7 +192,15 @@
     // MAP & TYPHOON LOGIC
     const map = L.map('map', { zoomControl: false, doubleClickZoom: false }).setView([22.3, 114.16], 6);
     L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png').addTo(map);
-
+    // Custom Low Pressure Icon (Black circle, hollow L)
+    const lowPressureIcon = L.divIcon({
+        className: 'custom-div-icon',
+        html: `<div style="background-color: black; border-radius: 50%; width: 24px; height: 24px; display: flex; align-items: center; justify-content: center; font-weight: 900; font-size: 16px; -webkit-text-stroke: 1.5px white; color: black; box-shadow: 0 2px 5px rgba(0,0,0,0.4);">L</div>`,
+        iconSize: [24, 24],
+        iconAnchor: [12, 12]
+    });
+    
+    let drawingMarker = null; // Used to track the 'L' while drawing
     let activeTyphoons = [];
     let currentTyphoonId = null;
     let currentTyphoonLocation = null;
@@ -336,7 +344,7 @@
     document.getElementById('btn-draw').addEventListener('click', () => {
         if (!currentTyphoonLocation) return alert("無法繪製 (颱風已結束或未載入)");
         
-        // Cooldown Logic: 3 hours for logged in, 6 hours for guests
+        // Cooldown Logic
         const isAnon = !USERNAME;
         const cooldownMs = (isAnon ? 6 : 3) * 60 * 60 * 1000;
         const lastPost = localStorage.getItem(`last_post_${currentTyphoonId}_${USER_ID}`);
@@ -353,12 +361,21 @@
         document.getElementById('btn-draw').style.display = 'none';
         document.getElementById('draw-controls').style.display = 'grid';
         currentCoordinates = [currentTyphoonLocation];
+
+        // Initialize the L marker at the start of drawing
+        if (drawingMarker) map.removeLayer(drawingMarker);
+        drawingMarker = L.marker(currentTyphoonLocation, { icon: lowPressureIcon }).addTo(map);
     });
 
     map.on('click', (e) => {
         if(document.getElementById('draw-controls').style.display === 'grid') {
             currentCoordinates.push([e.latlng.lat, e.latlng.lng]);
-            L.polyline(currentCoordinates, { color: 'red' }).addTo(map);
+            
+            // Draw the line connecting points
+            L.polyline(currentCoordinates, { color: '#ff4757', weight: 4 }).addTo(map);
+            
+            // Move the L marker to the newest click
+            drawingMarker.setLatLng(e.latlng);
         }
     });
 
@@ -383,30 +400,49 @@
         const res = await fetch(`${API_BASE_URL}/api/predictions?typhoon_id=${currentTyphoonId}`);
         const preds = await res.json();
 
-        // 1. Check if user is currently in cooldown (already submitted)
+        // Check if user is currently in cooldown (already submitted)
         const isAnon = !USERNAME;
         const cooldownMs = (isAnon ? 6 : 3) * 60 * 60 * 1000;
         const lastPost = localStorage.getItem(`last_post_${currentTyphoonId}_${USER_ID}`);
         const isSubmitted = lastPost && (Date.now() - parseInt(lastPost) < cooldownMs);
 
-        // 2. Check if the typhoon is inactive/ended
+        // Check if the typhoon is inactive/ended
         const currentTc = activeTyphoons.find(t => t.id === currentTyphoonId);
         const isEnded = currentTc && !currentTc.isActive;
 
         preds.forEach(p => {
             let coords = JSON.parse(p.path_data);
+            if (!coords || coords.length === 0) return;
+
             let isMine = p.user_id === USER_ID;
+            let lastPoint = coords[coords.length - 1]; // The final prediction coordinate
 
             // HIDE logic: If user CAN submit (not in cooldown) AND typhoon is active, hide other users' guesses
             if (!isSubmitted && !isEnded && !isMine) {
                 return; // Skip rendering other people's paths
             }
 
+            // Draw line
             L.polyline(coords, { 
                 color: isMine ? '#ff4757' : '#1e90ff', 
                 opacity: isMine ? 1 : 0.4, 
                 weight: isMine ? 4 : 2 
             }).addTo(map);
+
+            // Draw last point indicator
+            if (isMine) {
+                // Own drawing: Black circle with hollow L
+                L.marker(lastPoint, { icon: lowPressureIcon }).addTo(map).bindPopup("你的預測終點");
+            } else {
+                // Others: Small dot marker
+                L.circleMarker(lastPoint, { 
+                    radius: 4, 
+                    color: '#1e90ff', 
+                    fillColor: '#1e90ff', 
+                    fillOpacity: 0.8, 
+                    weight: 1 
+                }).addTo(map).bindPopup(p.username || "訪客");
+            }
         });
     }
 

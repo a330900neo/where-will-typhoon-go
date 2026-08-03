@@ -382,10 +382,31 @@
     async function fetchAndRenderPredictions() {
         const res = await fetch(`${API_BASE_URL}/api/predictions?typhoon_id=${currentTyphoonId}`);
         const preds = await res.json();
+
+        // 1. Check if user is currently in cooldown (already submitted)
+        const isAnon = !USERNAME;
+        const cooldownMs = (isAnon ? 6 : 3) * 60 * 60 * 1000;
+        const lastPost = localStorage.getItem(`last_post_${currentTyphoonId}_${USER_ID}`);
+        const isSubmitted = lastPost && (Date.now() - parseInt(lastPost) < cooldownMs);
+
+        // 2. Check if the typhoon is inactive/ended
+        const currentTc = activeTyphoons.find(t => t.id === currentTyphoonId);
+        const isEnded = currentTc && !currentTc.isActive;
+
         preds.forEach(p => {
             let coords = JSON.parse(p.path_data);
             let isMine = p.user_id === USER_ID;
-            L.polyline(coords, { color: isMine ? '#ff4757' : '#1e90ff', opacity: isMine?1:0.4, weight: isMine?4:2 }).addTo(map);
+
+            // HIDE logic: If user CAN submit (not in cooldown) AND typhoon is active, hide other users' guesses
+            if (!isSubmitted && !isEnded && !isMine) {
+                return; // Skip rendering other people's paths
+            }
+
+            L.polyline(coords, { 
+                color: isMine ? '#ff4757' : '#1e90ff', 
+                opacity: isMine ? 1 : 0.4, 
+                weight: isMine ? 4 : 2 
+            }).addTo(map);
         });
     }
 

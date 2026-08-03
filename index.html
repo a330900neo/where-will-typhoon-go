@@ -274,7 +274,22 @@
                     let cLon = parseFloat((analysis.querySelector("Longitude")||analysis.querySelector("longitude")).textContent);
                     currentTyphoonLocation = [cLat, cLon];
                     actualPathData.push([cLat, cLon]);
-                    L.marker([cLat, cLon]).addTo(map).bindPopup(tc.name).openPopup();
+                    
+                    // Parse Intensity & Wind
+                    let intensity = (analysis.querySelector("Intensity") || analysis.querySelector("intensity"))?.textContent.trim() || '';
+                    let wind = (analysis.querySelector("MaximumWind") || analysis.querySelector("maximumwind"))?.textContent.trim() || '';
+                    
+                    // Update Map Popup
+                    let popupText = `<div style="text-align:center;"><b>${tc.name}</b>`;
+                    if (intensity || wind) popupText += `<br><span style="font-size:12px; color:#666;">${intensity} ${wind ? '| '+wind : ''}</span>`;
+                    popupText += `</div>`;
+                    
+                    L.marker([cLat, cLon]).addTo(map).bindPopup(popupText).openPopup();
+
+                    // Update Status Bar
+                    let statusInfo = `追蹤 ${tc.name}`;
+                    if (intensity || wind) statusInfo += ` (${intensity})`;
+                    document.getElementById('status-bar').innerText = statusInfo;
                 }
 
                 // Sync actual path to DB for leaderboard & 36hr rule
@@ -320,6 +335,20 @@
     // Submitting (Remaining drawing logic is mostly identical)
     document.getElementById('btn-draw').addEventListener('click', () => {
         if (!currentTyphoonLocation) return alert("無法繪製 (颱風已結束或未載入)");
+        
+        // Cooldown Logic: 3 hours for logged in, 6 hours for guests
+        const isAnon = !USERNAME;
+        const cooldownMs = (isAnon ? 6 : 3) * 60 * 60 * 1000;
+        const lastPost = localStorage.getItem(`last_post_${currentTyphoonId}_${USER_ID}`);
+        
+        if (lastPost) {
+            const timeDiff = Date.now() - parseInt(lastPost);
+            if (timeDiff < cooldownMs) {
+                const hoursLeft = ((cooldownMs - timeDiff) / (1000 * 60 * 60)).toFixed(1);
+                return alert(`冷卻中！請等 ${hoursLeft} 小時後再發佈預測。\n(登入用戶冷卻 3 小時，訪客 6 小時)`);
+            }
+        }
+
         document.getElementById('map').classList.add('map-drawing-mode');
         document.getElementById('btn-draw').style.display = 'none';
         document.getElementById('draw-controls').style.display = 'grid';
@@ -342,6 +371,10 @@
                 method: 'POST', headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ id: 'p_'+Date.now(), typhoon_id: currentTyphoonId, user_id: USER_ID, path_data: currentCoordinates })
             });
+            
+            // Save timestamp for the cooldown check
+            localStorage.setItem(`last_post_${currentTyphoonId}_${USER_ID}`, Date.now().toString());
+            
             location.reload();
         } catch(e) { alert("發佈失敗"); }
     });

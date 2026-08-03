@@ -123,6 +123,25 @@
             font-weight: bold;
             display: none;
         }
+
+        /* Low Pressure "L" Marker Styling */
+        .lp-icon {
+            width: 22px;
+            height: 22px;
+            background-color: #000000;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: transparent;
+            -webkit-text-stroke: 1.5px #ffffff;
+            font-weight: 900;
+            font-size: 13px;
+            font-family: Arial, sans-serif;
+            border: 1px solid #ffffff;
+            box-shadow: 0 0 4px rgba(0,0,0,0.5);
+            box-sizing: border-box;
+        }
     </style>
 </head>
 <body>
@@ -153,7 +172,7 @@
 
 <script>
     // 🔴 CHANGE THIS TO YOUR CLOUDFLARE WORKER DEPLOYMENT URL
-    const API_BASE_URL = " https://typhoon-backend.someonechannel330.workers.dev";
+    const API_BASE_URL = "https://typhoon-backend.someonechannel330.workers.dev";
 
     function getUserId() {
         let uid = localStorage.getItem('typhoon_user_id');
@@ -164,6 +183,16 @@
         return uid;
     }
     const USER_ID = getUserId();
+
+    // Helper to generate Low Pressure "L" Icon
+    function createLPIcon(opacity = 1) {
+        return L.divIcon({
+            className: 'lp-marker-container',
+            html: `<div class="lp-icon" style="opacity: ${opacity};">L</div>`,
+            iconSize: [22, 22],
+            iconAnchor: [11, 11]
+        });
+    }
 
     // Map Setup (Switched to Bright Theme 'light_all')
     const map = L.map('map', { zoomControl: false, doubleClickZoom: false }).setView([22.3, 114.16], 6);
@@ -179,6 +208,7 @@
     let pastTrackLayer = null;
     let currentMarkerLayer = null;
     let currentDrawingLayer = null;
+    let drawingLastPointMarker = null;
     let predictionLayers = [];
 
     let isDrawingMode = false;
@@ -317,6 +347,7 @@
             if (pastTrackLayer) map.removeLayer(pastTrackLayer);
             if (currentMarkerLayer) map.removeLayer(currentMarkerLayer);
             if (currentDrawingLayer) map.removeLayer(currentDrawingLayer);
+            if (drawingLastPointMarker) map.removeLayer(drawingLastPointMarker);
             currentTyphoonLocation = null;
             cancelDrawing();
 
@@ -338,14 +369,29 @@
             if (analysisNode) {
                 const lat = parseFloat((analysisNode.querySelector("Latitude") || analysisNode.querySelector("latitude")).textContent.trim());
                 const lon = parseFloat((analysisNode.querySelector("Longitude") || analysisNode.querySelector("longitude")).textContent.trim());
+                
+                // Read Intensity and Maximum Wind speed
+                const intensity = (analysisNode.querySelector("Intensity") || analysisNode.querySelector("intensity"))?.textContent.trim() || '';
+                const wind = (analysisNode.querySelector("MaximumWind") || analysisNode.querySelector("maximumwind"))?.textContent.trim() || '';
+
                 currentTyphoonLocation = [lat, lon];
                 
+                let popupContent = `<b>${typhoon.name}</b>`;
+                if (intensity || wind) {
+                    popupContent += `<br>${intensity} ${wind ? '| 風速: ' + wind : ''}`;
+                }
+
                 currentMarkerLayer = L.circleMarker(currentTyphoonLocation, {
                     color: 'red', fillColor: '#f03', fillOpacity: 1, radius: 8
-                }).addTo(map).bindPopup(`${typhoon.name} (Current)`).openPopup();
+                }).addTo(map).bindPopup(popupContent).openPopup();
                 
                 map.setView(currentTyphoonLocation, 5);
-                statusBar.innerText = `颱風: ${typhoon.name}`;
+
+                let statusInfo = `颱風: ${typhoon.name}`;
+                if (intensity || wind) {
+                    statusInfo += ` (${intensity}${wind ? ' ' + wind : ''})`;
+                }
+                statusBar.innerText = statusInfo;
             } else {
                 statusBar.innerText = `stalk唔到${typhoon.name}`;
             }
@@ -371,12 +417,28 @@
     const btnCancel = document.getElementById('btn-cancel');
     const btnSubmit = document.getElementById('btn-submit');
 
+    function updateDrawingLayers() {
+        if (currentDrawingLayer) map.removeLayer(currentDrawingLayer);
+        if (drawingLastPointMarker) map.removeLayer(drawingLastPointMarker);
+
+        if (currentCoordinates.length > 0) {
+            currentDrawingLayer = L.polyline(currentCoordinates, { color: '#ff4757', weight: 5 }).addTo(map);
+            
+            // Draw Low Pressure "L" icon on the latest point drawn
+            if (currentCoordinates.length > 1) {
+                const lastPt = currentCoordinates[currentCoordinates.length - 1];
+                drawingLastPointMarker = L.marker(lastPt, { icon: createLPIcon(1) }).addTo(map);
+            }
+        }
+    }
+
     function cancelDrawing() {
         isDrawingMode = false;
         btnDraw.style.display = 'block';
         drawControls.style.display = 'none';
         currentCoordinates = [];
         if (currentDrawingLayer) map.removeLayer(currentDrawingLayer);
+        if (drawingLastPointMarker) map.removeLayer(drawingLastPointMarker);
         statusBar.innerText = currentTyphoonId ? `有風` : '打到打唔到？唔係靠彩數!';
     }
 
@@ -397,8 +459,7 @@
         currentCoordinates = [currentTyphoonLocation];
         statusBar.innerText = `Points: 1/${MAX_POINTS}`;
         
-        if (currentDrawingLayer) map.removeLayer(currentDrawingLayer);
-        currentDrawingLayer = L.polyline(currentCoordinates, { color: '#ff4757', weight: 5 }).addTo(map);
+        updateDrawingLayers();
     });
 
     btnCancel.addEventListener('click', cancelDrawing);
@@ -406,7 +467,7 @@
     btnUndo.addEventListener('click', () => {
         if (currentCoordinates.length > 1) {
             currentCoordinates.pop();
-            currentDrawingLayer.setLatLngs(currentCoordinates);
+            updateDrawingLayers();
             statusBar.innerText = `Points: ${currentCoordinates.length}/${MAX_POINTS}`;
         }
     });
@@ -420,7 +481,7 @@
         }
         
         currentCoordinates.push([e.latlng.lat, e.latlng.lng]);
-        currentDrawingLayer.setLatLngs(currentCoordinates);
+        updateDrawingLayers();
         statusBar.innerText = `Points: ${currentCoordinates.length}/${MAX_POINTS}`;
     });
 
@@ -527,6 +588,13 @@
             
             const line = L.polyline(pred.coords, { color: color, weight: weight, opacity: opacity }).addTo(map);
             predictionLayers.push(line);
+
+            // Add Low Pressure "L" marker to the end of each rendered prediction line
+            if (pred.coords && pred.coords.length > 1) {
+                const lastPt = pred.coords[pred.coords.length - 1];
+                const lpMarker = L.marker(lastPt, { icon: createLPIcon(opacity) }).addTo(map);
+                predictionLayers.push(lpMarker);
+            }
         });
     }
 

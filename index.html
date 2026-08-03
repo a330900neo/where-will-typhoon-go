@@ -203,12 +203,10 @@
         try {
             document.getElementById('status-bar').innerText = "載入中...";
             
-            // 1. Fetch Active HKO
-            const proxies = [
-                (url) => fetch(`https://corsproxy.io/?url=${encodeURIComponent(url)}`).then(r=>r.text()),
-                (url) => fetch(`https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`).then(r=>r.text())
-            ];
-            let listXmlText = await proxies[0]("https://www.weather.gov.hk/wxinfo/currwx/tc_list.xml");
+            // 1. Fetch Active HKO using YOUR secure worker proxy
+            const targetUrl = encodeURIComponent("https://www.weather.gov.hk/wxinfo/currwx/tc_list.xml");
+            let listXmlText = await fetch(`${API_BASE_URL}/api/proxy?url=${targetUrl}`).then(r => r.text());
+            
             const parser = new DOMParser();
             const doc = parser.parseFromString(listXmlText, "text/xml");
             
@@ -244,20 +242,25 @@
             } else {
                 document.getElementById('status-bar').innerText = "暫無熱帶氣旋";
             }
-        } catch(e) { document.getElementById('status-bar').innerText = "載入失敗"; }
+        } catch(e) { 
+            console.error(e);
+            document.getElementById('status-bar').innerText = "載入失敗"; 
+        }
     }
 
     async function loadTyphoonTrack(tc) {
         currentTyphoonId = tc.id;
         document.getElementById('status-bar').innerText = `追蹤 ${tc.name}`;
-        map.eachLayer(layer => { if(!!layer.toGeoJSON) map.removeLayer(layer); }); // Clear paths
+        map.eachLayer(layer => { if(!!layer.toGeoJSON) map.removeLayer(layer); }); // Clear old paths
         
         let actualPathData = [];
         
         if (tc.isActive && tc.url) {
             try {
-                const url = `https://api.allorigins.win/raw?url=${encodeURIComponent(tc.url)}`;
-                const xml = await fetch(url).then(r=>r.text()).then(t => new DOMParser().parseFromString(t, "text/xml"));
+                // Fetch the specific typhoon data through YOUR worker proxy
+                const targetUrl = encodeURIComponent(tc.url);
+                const xmlText = await fetch(`${API_BASE_URL}/api/proxy?url=${targetUrl}`).then(r => r.text());
+                const xml = new DOMParser().parseFromString(xmlText, "text/xml");
                 
                 xml.querySelectorAll("PastInformation, pastinformation").forEach(n => {
                     let lat = parseFloat((n.querySelector("Latitude") || n.querySelector("latitude"))?.textContent);
@@ -278,11 +281,12 @@
                 if(actualPathData.length > 0) {
                     L.polyline(actualPathData, { color: '#000', weight: 3, dashArray: '5,5' }).addTo(map);
                     fetch(`${API_BASE_URL}/api/sync-typhoon`, {
-                        method: 'POST', headers:{'Content-Type':'application/json'},
+                        method: 'POST', 
+                        headers:{'Content-Type':'application/json'},
                         body: JSON.stringify({ id: tc.id, name: tc.name.replace(" (已結束)",""), actual_path: actualPathData })
                     });
                 }
-            } catch(e) { console.error(e); }
+            } catch(e) { console.error("Error loading typhoon data:", e); }
         }
 
         fetchAndRenderPredictions();

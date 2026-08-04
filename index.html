@@ -229,12 +229,19 @@
             });
 
             // 2. Fetch 36-hour memory from Backend
+            // 2. Fetch 36-hour memory from Backend
             try {
                 const recentRes = await fetch(`${API_BASE_URL}/api/recent-typhoons`);
                 const recentDb = await recentRes.json();
                 recentDb.forEach(dbTc => {
                     if (!activeTyphoons.find(t => t.id === dbTc.id)) {
-                        activeTyphoons.push({ id: dbTc.id, name: dbTc.name + " (已結束)", url: null, isActive: false });
+                        activeTyphoons.push({ 
+                            id: dbTc.id, 
+                            name: dbTc.name.includes("已結束") ? dbTc.name : dbTc.name + " (已結束)", 
+                            url: null, 
+                            isActive: false,
+                            actualPath: dbTc.actual_path ? JSON.parse(dbTc.actual_path) : []
+                        });
                     }
                 });
             } catch(e) {}
@@ -262,10 +269,11 @@
         map.eachLayer(layer => { if(!!layer.toGeoJSON) map.removeLayer(layer); }); // Clear old paths
         
         let actualPathData = [];
+        let isLowPressure = false;
+        currentTyphoonLocation = null; // Default to null; only enable if active & not low pressure
         
         if (tc.isActive && tc.url) {
             try {
-                // Fetch the specific typhoon data through YOUR worker proxy
                 const targetUrl = encodeURIComponent(tc.url);
                 const xmlText = await fetch(`${API_BASE_URL}/api/proxy?url=${targetUrl}`).then(r => r.text());
                 const xml = new DOMParser().parseFromString(xmlText, "text/xml");
@@ -280,27 +288,32 @@
                 if (analysis) {
                     let cLat = parseFloat((analysis.querySelector("Latitude")||analysis.querySelector("latitude")).textContent);
                     let cLon = parseFloat((analysis.querySelector("Longitude")||analysis.querySelector("longitude")).textContent);
-                    currentTyphoonLocation = [cLat, cLon];
+                    
                     actualPathData.push([cLat, cLon]);
                     
-                    // Parse Intensity & Wind
                     let intensity = (analysis.querySelector("Intensity") || analysis.querySelector("intensity"))?.textContent.trim() || '';
                     let wind = (analysis.querySelector("MaximumWind") || analysis.querySelector("maximumwind"))?.textContent.trim() || '';
                     
-                    // Update Map Popup
+                    // Check if dissipated into Low Pressure Area
+                    isLowPressure = intensity.includes("Low Pressure") || intensity.includes("低壓區") || intensity.includes("低壓");
+                    tc.isLowPressure = isLowPressure;
+
                     let popupText = `<div style="text-align:center;"><b>${tc.name}</b>`;
                     if (intensity || wind) popupText += `<br><span style="font-size:12px; color:#666;">${intensity} ${wind ? '| '+wind : ''}</span>`;
                     popupText += `</div>`;
-                    
-                    L.marker([cLat, cLon]).addTo(map).bindPopup(popupText).openPopup();
 
-                    // Update Status Bar
-                    let statusInfo = `追蹤 ${tc.name}`;
-                    if (intensity || wind) statusInfo += ` (${intensity})`;
-                    document.getElementById('status-bar').innerText = statusInfo;
+                    if (isLowPressure) {
+                        // Place hollow L icon at final position for Low Pressure Area
+                        L.marker([cLat, cLon], { icon: lowPressureIcon }).addTo(map).bindPopup(popupText).openPopup();
+                        document.getElementById('status-bar').innerText = `${tc.name} (已減弱為低壓區)`;
+                    } else {
+                        currentTyphoonLocation = [cLat, cLon];
+                        L.marker([cLat, cLon]).addTo(map).bindPopup(popupText).openPopup();
+                        document.getElementById('status-bar').innerText = `追蹤 ${tc.name}${intensity ? ' ('+intensity+')' : ''}`;
+                    }
                 }
 
-                // Sync actual path to DB for leaderboard & 36hr rule
+                // Sync actual path to DB
                 if(actualPathData.length > 0) {
                     L.polyline(actualPathData, { color: '#000', weight: 3, dashArray: '5,5' }).addTo(map);
                     fetch(`${API_BASE_URL}/api/sync-typhoon`, {
@@ -310,6 +323,17 @@
                     });
                 }
             } catch(e) { console.error("Error loading typhoon data:", e); }
+        } else if (!tc.isActive && tc.actualPath && tc.actualPath.length > 0) {
+            // HISTORICAL / ENDED TYPHOON: Render actual path & hollow L at end point
+            actualPathData = tc.actualPath;
+            let lastPoint = actualPathData[actualPathData.length - 1];
+            
+            L.polyline(actualPathData, { color: '#000', weight: 3, dashArray: '5,5' }).addTo(map);
+            L.marker(lastPoint, { icon: lowPressureIcon }).addTo(map)
+                .bindPopup(`<div style="text-align:center;"><b>${tc.name}</b><br><span style="font-size:12px; color:#666;">低壓區 (已結束)</span></div>`)
+                .openPopup();
+                
+            document.getElementById('status-bar').innerText = `${tc.name}`;
         }
 
         fetchAndRenderPredictions();
@@ -342,7 +366,10 @@
 
     // Submitting (Remaining drawing logic is mostly identical)
     document.getElementById('btn-draw').addEventListener('click', () => {
-        if (!currentTyphoonLocation) return alert("無法繪製 (颱風已結束或未載入)");
+        const currentTc = activeTyphoons.find(t => t.id === currentTyphoonId);
+        if (!currentTyphoonLocation || (currentTc && (!currentTc.isActive || currentTc.isLowPressure))) {
+            return alert("該熱帶氣旋已減弱為低壓區或已結束，無法再進行預測。");
+        }
         
         // Cooldown Logic
         const isAnon = !USERNAME;
@@ -362,7 +389,6 @@
         document.getElementById('draw-controls').style.display = 'grid';
         currentCoordinates = [currentTyphoonLocation];
 
-        // Initialize the L marker at the start of drawing
         if (drawingMarker) map.removeLayer(drawingMarker);
         drawingMarker = L.marker(currentTyphoonLocation, { icon: lowPressureIcon }).addTo(map);
     });

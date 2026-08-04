@@ -340,8 +340,18 @@
     }
 
     // Leaderboard Trigger
+    // Leaderboard Trigger
     document.getElementById('btn-leaderboard').addEventListener('click', async () => {
         if (!currentTyphoonId) return;
+        
+        // 1. Get the name of the currently selected typhoon
+        const currentTc = activeTyphoons.find(t => t.id === currentTyphoonId);
+        const tcName = currentTc ? currentTc.name.replace(" (已結束)", "") : '';
+
+        // 2. Update the Leaderboard title to show which typhoon is being viewed
+        const boardTitle = document.querySelector('#board-overlay h2');
+        if (boardTitle) boardTitle.innerHTML = `🏆 ${tcName} 準確度排行榜`;
+
         const listDiv = document.getElementById('leaderboard-list');
         listDiv.innerHTML = "載入中...";
         document.getElementById('board-overlay').style.display = 'flex';

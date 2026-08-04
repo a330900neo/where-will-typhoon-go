@@ -3,6 +3,26 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <!-- Favicon & App Icons -->
+    <link rel="icon" type="image/png" href="/icon.png">
+    <link rel="apple-touch-icon" href="/icon.png">
+
+    <!-- Open Graph / Facebook / Discord -->
+    <meta property="og:type" content="website">
+    <meta property="og:url" content="https://a330900neo.github.io/where-will-typhoon-go/">
+    <meta property="og:title" content="颱風會去邊">
+    <meta property="og:description" content="打唔打得成風？颱風會去邊？大家一齊估啦">
+    <meta property="og:image" content="/icon.png">
+
+    <!-- Discord Embed Theme Color -->
+    <meta name="theme-color" content="#ff4757">
+
+    <!-- Twitter / X -->
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:url" content="https://a330900neo.github.io/where-will-typhoon-go/">
+    <meta name="twitter:title" content="颱風會去邊">
+    <meta name="twitter:description" content="打唔打得成風？颱風會去邊？大家一齊估啦">
+    <meta name="twitter:image" content="/icon.png">
     <title>颱風會去邊</title>
     
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
@@ -125,7 +145,7 @@
         <div id="draw-controls" class="draw-controls">
             <button id="btn-undo" class="btn">↩️ 回帶</button>
             <button id="btn-cancel" class="btn">❌ 唔估</button>
-            <button id="btn-submit" class="btn">🚀 發佈預測</button>
+            <button id="btn-submit" class="btn">🚀 落注</button>
         </div>
     </div>
 
@@ -209,7 +229,7 @@
 
     async function initApp() {
         try {
-            document.getElementById('status-bar').innerText = "載入中...";
+            document.getElementById('status-bar').innerText = "揾緊風...";
             
             // 1. Fetch Active HKO using YOUR secure worker proxy
             const targetUrl = encodeURIComponent("https://www.weather.gov.hk/wxinfo/currwx/tc_list.xml");
@@ -237,7 +257,7 @@
                     if (!activeTyphoons.find(t => t.id === dbTc.id)) {
                         activeTyphoons.push({ 
                             id: dbTc.id, 
-                            name: dbTc.name.includes("已結束") ? dbTc.name : dbTc.name + " (已結束)", 
+                            name: dbTc.name.includes("已結束") ? dbTc.name : dbTc.name + " (死咗)", 
                             url: null, 
                             isActive: false,
                             actualPath: dbTc.actual_path ? JSON.parse(dbTc.actual_path) : []
@@ -255,17 +275,17 @@
                 selector.addEventListener('change', (e) => loadTyphoonTrack(activeTyphoons.find(t => t.id === e.target.value)));
                 loadTyphoonTrack(activeTyphoons[0]);
             } else {
-                document.getElementById('status-bar').innerText = "暫無熱帶氣旋";
+                document.getElementById('status-bar').innerText = "唔洗諗住打風";
             }
         } catch(e) { 
             console.error(e);
-            document.getElementById('status-bar').innerText = "載入失敗"; 
+            document.getElementById('status-bar').innerText = "load唔到"; 
         }
     }
 
     async function loadTyphoonTrack(tc) {
         currentTyphoonId = tc.id;
-        document.getElementById('status-bar').innerText = `追蹤 ${tc.name}`;
+        document.getElementById('status-bar').innerText = `stalking ${tc.name}`;
         map.eachLayer(layer => { if(!!layer.toGeoJSON) map.removeLayer(layer); }); // Clear old paths
         
         let actualPathData = [];
@@ -309,7 +329,7 @@
                     } else {
                         currentTyphoonLocation = [cLat, cLon];
                         L.marker([cLat, cLon]).addTo(map).bindPopup(popupText).openPopup();
-                        document.getElementById('status-bar').innerText = `追蹤 ${tc.name}${intensity ? ' ('+intensity+')' : ''}`;
+                        document.getElementById('status-bar').innerText = `stalking ${tc.name}${intensity ? ' ('+intensity+')' : ''}`;
                     }
                 }
 
@@ -330,7 +350,7 @@
             
             L.polyline(actualPathData, { color: '#000', weight: 3, dashArray: '5,5' }).addTo(map);
             L.marker(lastPoint, { icon: lowPressureIcon }).addTo(map)
-                .bindPopup(`<div style="text-align:center;"><b>${tc.name}</b><br><span style="font-size:12px; color:#666;">低壓區 (已結束)</span></div>`)
+                .bindPopup(`<div style="text-align:center;"><b>${tc.name}</b><br><span style="font-size:12px; color:#666;">低壓區 (死咗)</span></div>`)
                 .openPopup();
                 
             document.getElementById('status-bar').innerText = `${tc.name}`;
@@ -360,13 +380,13 @@
             const res = await fetch(`${API_BASE_URL}/api/leaderboard?typhoon_id=${currentTyphoonId}`);
             const data = await res.json();
             
-            if (data.length === 0) { listDiv.innerHTML = "暫無排行數據"; return; }
+            if (data.length === 0) { listDiv.innerHTML = "一係冇人一係冇風"; return; }
             
             listDiv.innerHTML = data.map((u, i) => `
                 <div class="leaderboard-item">
                     <div>
                         <span class="rank">#${i+1}</span> <b>${u.username}</b>
-                        <span style="font-size:11px;color:#888;margin-left:5px;">(${u.guesses}估)</span>
+                        <span style="font-size:11px;color:#888;margin-left:5px;">(${u.guesses}次估)</span>
                     </div>
                     <div style="font-weight:bold; color:var(--success-accent);">${u.score}%</div>
                 </div>
@@ -378,7 +398,7 @@
     document.getElementById('btn-draw').addEventListener('click', () => {
         const currentTc = activeTyphoons.find(t => t.id === currentTyphoonId);
         if (!currentTyphoonLocation || (currentTc && (!currentTc.isActive || currentTc.isLowPressure))) {
-            return alert("該熱帶氣旋已減弱為低壓區或已結束，無法再進行預測。");
+            return alert("該熱帶氣旋已減弱為低壓區或死咗，無法再落注。");
         }
         
         // Cooldown Logic
@@ -390,7 +410,7 @@
             const timeDiff = Date.now() - parseInt(lastPost);
             if (timeDiff < cooldownMs) {
                 const hoursLeft = ((cooldownMs - timeDiff) / (1000 * 60 * 60)).toFixed(1);
-                return alert(`冷卻中！請等 ${hoursLeft} 小時後再發佈預測。\n(登入用戶冷卻 3 小時，訪客 6 小時)`);
+                return alert(`冷卻中！請等 ${hoursLeft} 小時後再落注。\n(登入用戶冷卻 3 小時，訪客 6 小時)`);
             }
         }
 
@@ -429,7 +449,7 @@
             localStorage.setItem(`last_post_${currentTyphoonId}_${USER_ID}`, Date.now().toString());
             
             location.reload();
-        } catch(e) { alert("發佈失敗"); }
+        } catch(e) { alert("落注失敗"); }
     });
 
     async function fetchAndRenderPredictions() {
@@ -468,7 +488,7 @@
             // Draw last point indicator
             if (isMine) {
                 // Own drawing: Black circle with hollow L
-                L.marker(lastPoint, { icon: lowPressureIcon }).addTo(map).bindPopup("你的預測終點");
+                L.marker(lastPoint, { icon: lowPressureIcon }).addTo(map).bindPopup("你嘅落注終點");
             } else {
                 // Others: Small dot marker
                 L.circleMarker(lastPoint, { 
